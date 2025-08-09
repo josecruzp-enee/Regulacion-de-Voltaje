@@ -1,0 +1,43 @@
+streamlit
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from fpdf import FPDF
+import tempfile
+import os
+import math
+import sympy as sp
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.platypus import Image
+import webbrowser
+import seaborn as sns
+from io import BytesIO
+from reportlab.lib.enums import TA_CENTER
+import platform
+from reportlab.lib.units import inch
+from reportlab.lib.units import cm, inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Frame
+from reportlab.platypus import PageTemplate
+from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.colors import red
+import io
+import networkx as nx
+import matplotlib.pyplot as plt
+import io
+import matplotlib.pyplot as plt
+import networkx as nx
+from matplotlib import rcParams
+import streamlit as st
+import sys
+from colorama import init, Fore, Style
+import streamlit as st
+import modulo_de_regulacion_de_voltaje as mod  # tu módulo con funciones
+import tempfile
+import os

@@ -1,35 +1,46 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Aug  9 12:38:48 2025
 
-# app.py
+@author: José Nikol Cruz
+"""
+
 import streamlit as st
-from utilidades_red import ejecutar_analisis
+import modulo_de_regulacion_de_voltaje as mod  # tu módulo con funciones
+import tempfile
 import os
 
-st.set_page_config(page_title="Análisis Red Eléctrica", layout="centered")
-st.title("Análisis de Red Secundaria de Distribución")
+st.title("Generador de Informe PDF desde Excel")
 
-st.markdown("""
-Esta aplicación permite subir un archivo Excel con la información de un circuito de distribución monofásico,
-realizar el análisis de flujo de carga, calcular regulación, pérdidas eléctricas, cargabilidad del transformador y generar un informe en PDF.
-""")
+# Subir archivo Excel
+uploaded_file = st.file_uploader("Selecciona el archivo Excel", type=["xls", "xlsx"])
 
-archivo = st.file_uploader("Sube tu archivo de datos (datos_circuito.xlsx)", type=["xlsx"])
+if uploaded_file is not None:
+    # Guardar temporalmente el archivo subido
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_file:
+        tmp_file.write(uploaded_file.read())
+        ruta_excel = tmp_file.name
 
-if archivo:
-    with open("datos_circuito.xlsx", "wb") as f:
-        f.write(archivo.read())
-
-    st.success("Archivo cargado correctamente. Ejecutando análisis...")
+    st.write("Archivo recibido. Procesando...")
 
     try:
-        resultados, mensaje_pdf = ejecutar_analisis("datos_circuito.xlsx")
+        # Aquí llamamos a la función principal de tu módulo para procesar y generar PDF
+        # Ajusta esto según cómo tengas tu función para procesar y generar el PDF:
+        mod.main_con_ruta_archivo(ruta_excel)  # o la función que hayas definido que tome ruta
 
-        st.subheader("✅ Resultados principales")
-        st.dataframe(resultados["voltajes"])
-        st.dataframe(resultados["regulacion"])
-
-        st.subheader("📥 Descargar informe PDF")
-        with open(mensaje_pdf, "rb") as f:
-            st.download_button("Descargar PDF", f, file_name="informe_red_electrica.pdf")
+        # El PDF se genera en la carpeta actual, asumimos el nombre fijo, por ej:
+        nombre_pdf = "informe_red_electrica.pdf"
+        
+        # Mostrar botón para descargar PDF
+        with open(nombre_pdf, "rb") as pdf_file:
+            PDFbyte = pdf_file.read()
+            st.download_button(label="Descargar Informe PDF",
+                               data=PDFbyte,
+                               file_name=nombre_pdf,
+                               mime='application/pdf')
 
     except Exception as e:
-        st.error(f"Ocurrió un error al ejecutar el análisis: {e}")
+        st.error(f"Ocurrió un error al generar el PDF: {e}")
+
+    # Borrar archivo temporal después del proceso
+    os.remove(ruta_excel)
