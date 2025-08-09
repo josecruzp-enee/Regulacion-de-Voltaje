@@ -1,1 +1,1 @@
-# prueba1.0
+Análisis de Regulación en red secundaria. 
