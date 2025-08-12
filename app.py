@@ -10,7 +10,7 @@ import modulo_de_regulacion_de_voltaje as mod  # tu módulo con funciones
 import tempfile
 import os
 
-st.title("Generador de Informe PDF desde Excel")
+st.title("Análisis de Regulación de Voltaje en Red Secundaria")
 
 # Subir archivo Excel
 uploaded_file = st.file_uploader("Selecciona el archivo Excel", type=["xls", "xlsx"])
@@ -44,3 +44,4 @@ if uploaded_file is not None:
 
     # Borrar archivo temporal después del proceso
     os.remove(ruta_excel)
+
