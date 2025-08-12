@@ -1,10 +1,10 @@
-matplotlib
+pandas
 numpy
-fpdf
+matplotlib
 sympy
+streamlit
+colorama
+fpdf
 reportlab
 seaborn
 networkx
-streamlit
-colorama
-openpyxl
