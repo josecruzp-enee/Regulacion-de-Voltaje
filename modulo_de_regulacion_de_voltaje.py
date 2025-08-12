@@ -1709,8 +1709,8 @@ def generar_informe_pdf(df_info, df_parametros, factor_coinc, potencia_total_kva
     crear_pdf("informe_red_electrica.pdf", secciones, nodos_inicio, nodos_final, usuarios, distancias, capacidad_transformador)
 
 
-def main():
-    archivo = 'datos_circuito.xlsx'
+def main(ruta_archivo='datos_circuito.xlsx'):
+    archivo = ruta_archivo
     
     # Cargar datos y preparar variables iniciales
     (df_conexiones, df_parametros, df_info, tipo_conductor, area_lote, capacidad_transformador,
@@ -1732,8 +1732,9 @@ def main():
 
 
 def main_con_ruta_archivo(ruta_excel):
-    os.chdir(ruta_excel)
-    archivo = 'datos_circuito.xlsx'
+    carpeta_excel = os.path.dirname(ruta_excel)
+    os.chdir(carpeta_excel)
+    archivo = os.path.basename(ruta_excel)
     
     # Cargar datos y preparar variables iniciales
     (df_conexiones, df_parametros, df_info, tipo_conductor, area_lote, capacidad_transformador,
@@ -1757,4 +1758,5 @@ def main_con_ruta_archivo(ruta_excel):
 if __name__ == "__main__":
     main()
     
+
    
