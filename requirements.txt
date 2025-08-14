@@ -9,3 +9,5 @@ reportlab
 seaborn
 networkx
 openpyxl
+tempfile
+os
