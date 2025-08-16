@@ -26,9 +26,15 @@ def generar_pdf_dashboard_bytes(potencia_total_kva, perdida_total, capacidad_tra
                                df_regulacion, df_voltajes, df_proyeccion,
                                df_corrientes):
 
+    import io
+    from reportlab.lib.pagesizes import landscape, letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepInFrame
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib import colors
+
     buffer_pdf = io.BytesIO()
-    doc = SimpleDocTemplate(buffer_pdf, pagesize=landscape(letter),
-                            rightMargin=15, leftMargin=15, topMargin=15, bottomMargin=15)
+    doc = SimpleDocTemplate(buffer_pdf, pagesize=landscape(letter), rightMargin=15, leftMargin=15, topMargin=15, bottomMargin=15)
     elementos = []
 
     # Título
@@ -68,11 +74,16 @@ def generar_pdf_dashboard_bytes(potencia_total_kva, perdida_total, capacidad_tra
 
     # Tabla Corrientes
     tabla_corr_data = [['Nodo Ini','Nodo Fin','Tramo','|I| (A)']]
-    # Convertimos a DataFrame si df_corrientes es lista
-    if isinstance(df_corrientes, list):
-        df_corrientes = pd.DataFrame(df_corrientes)
-    for row in df_corrientes.itertuples(index=False):
-        tabla_corr_data.append([row.nodo_inicial,row.nodo_final,row.tramo,f"{row.I:.1f}"])
+    # Detectar si es lista o DataFrame
+    if hasattr(df_corrientes, "itertuples"):
+        # Es DataFrame
+        for row in df_corrientes.itertuples(index=False):
+            tabla_corr_data.append([row.nodo_inicial, row.nodo_final, row.tramo, f"{row.I:.1f}"])
+    else:
+        # Es lista de diccionarios
+        for row in df_corrientes:
+            tabla_corr_data.append([row['nodo_inicial'], row['nodo_final'], row['tramo'], f"{row['I']:.1f}"])
+            
     tabla_corr = Table(tabla_corr_data, colWidths=[40]*4)
     tabla_corr.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0), colors.green),
@@ -84,6 +95,7 @@ def generar_pdf_dashboard_bytes(potencia_total_kva, perdida_total, capacidad_tra
     ]))
 
     # --- Gráficos ---
+    from modulo_de_regulacion_de_voltaje import crear_grafico_nodos, crear_grafico_voltajes, crear_grafico_proyeccion
     buf_nodos = crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias, capacidad_transformador)
     buf_voltajes = crear_grafico_voltajes(df_voltajes)
     buf_proy = crear_grafico_proyeccion(df_proyeccion)
@@ -153,3 +165,4 @@ st.download_button(
     file_name="informe_corto.pdf",  # <- ahora coincide con tu archivo
     mime="application/pdf"
 )
+
