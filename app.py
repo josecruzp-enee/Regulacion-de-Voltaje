@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 import modulo_de_regulacion_de_voltaje as mod
 import tempfile
@@ -6,10 +5,7 @@ import os
 
 st.title("Generador de Informes de Red Eléctrica")
 
-# Subir archivo Excel
 uploaded_file = st.file_uploader("Selecciona el archivo Excel", type=["xls", "xlsx"])
-
-# Selector de tipo de informe
 tipo_informe = st.selectbox("¿Qué tipo de informe deseas generar?", ["Completo", "Corto"])
 
 if uploaded_file is not None:
@@ -29,12 +25,17 @@ if uploaded_file is not None:
             mod.generar_pdf_corto(*datos)
             nombre_pdf = "informe_corto.pdf"
 
-        # Descargar
+        # Botón para descargar
         with open(nombre_pdf, "rb") as pdf_file:
-            PDFbyte = pdf_file.read()
-            st.download_button(label="Descargar Informe PDF", data=PDFbyte, file_name=nombre_pdf, mime='application/pdf')
+            st.download_button(
+                label="Descargar Informe PDF",
+                data=pdf_file,
+                file_name=nombre_pdf,
+                mime='application/pdf'
+            )
 
     except Exception as e:
         st.error(f"Ocurrió un error: {e}")
 
     os.remove(ruta_excel)
+
