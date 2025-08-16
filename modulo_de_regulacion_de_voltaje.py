@@ -1709,7 +1709,7 @@ def generar_informe_pdf(df_info, df_parametros, factor_coinc, potencia_total_kva
     crear_pdf("informe_red_electrica.pdf", secciones, nodos_inicio, nodos_final, usuarios, distancias, capacidad_transformador)
 def obtener_datos_para_pdf_corto(ruta_excel):
     import os
-    from .tus_funciones import (  # Ajusta estos imports si están en otros archivos
+    from tus_funciones import (  # Ajusta estos imports si están en otros archivos
         cargar_y_preparar_datos,
         calcular_flujo_carga_y_perdidas,
         calcular_regulacion_y_proyeccion
@@ -1798,6 +1798,7 @@ if __name__ == "__main__":
     
 
    
+
 
 
 
