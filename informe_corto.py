@@ -1,6 +1,6 @@
 # informe_corto.py
 
-from utilidades_red import (
+from modulo_de_regulacion_de_voltaje import (
     cargar_datos_circuito, resistencia_por_vano, reactancia_por_vano_geometrica,
     calcular_impedancia, calcular_admitancia, calcular_potencia_carga,
     calcular_matriz_admitancia, calcular_voltajes_nodales,
@@ -103,3 +103,4 @@ def generar_datos_y_pdf_corto():
 
 if __name__ == "__main__":
     generar_datos_y_pdf_corto()
+
