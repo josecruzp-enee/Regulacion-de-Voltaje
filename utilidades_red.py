@@ -8,7 +8,7 @@ Created on Sat Aug  9 12:57:23 2025
 
 import os
 import modulo_de_regulacion_de_voltaje as mod
-from tus_funciones import (   # quité el punto porque no estás en un paquete
+from modulo_de_regulacion_de_voltaje import (   # quité el punto porque no estás en un paquete
     cargar_y_preparar_datos,
     calcular_flujo_carga_y_perdidas,
     calcular_regulacion_y_proyeccion
@@ -60,3 +60,4 @@ def obtener_datos_para_pdf_corto(ruta_excel):
     return (
         df_info,
         potencia_total_kva,
+
