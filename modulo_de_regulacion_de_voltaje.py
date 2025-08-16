@@ -1708,7 +1708,7 @@ def generar_informe_pdf(df_info, df_parametros, factor_coinc, potencia_total_kva
 
     crear_pdf("informe_red_electrica.pdf", secciones, nodos_inicio, nodos_final, usuarios, distancias, capacidad_transformador)
 
-def generar_pdf_corto(ruta_excel):
+def obtener_datos_para_pdf_corto(ruta_excel):
     """
     Obtiene los datos necesarios para generar un informe corto a partir de un archivo Excel.
     """
@@ -1812,6 +1812,7 @@ if __name__ == "__main__":
     
 
    
+
 
 
 
