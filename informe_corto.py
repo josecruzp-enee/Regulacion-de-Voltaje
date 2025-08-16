@@ -9,7 +9,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib import colors
 
-from módulo_de_regulacion_de_voltaje import (
+from modulo_de_regulacion_de_voltaje import (
     cargar_datos_circuito, resistencia_por_vano, reactancia_por_vano_geometrica,
     calcular_impedancia, calcular_admitancia, calcular_potencia_carga,
     calcular_matriz_admitancia, calcular_voltajes_nodales,
@@ -165,4 +165,5 @@ st.download_button(
     file_name="informe_corto.pdf",  # <- ahora coincide con tu archivo
     mime="application/pdf"
 )
+
 
