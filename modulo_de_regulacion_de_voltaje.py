@@ -1760,6 +1760,67 @@ def obtener_datos_para_pdf_corto(ruta_excel):
         df_regulacion
     )
 
+def generar_pdf_corto(df_info, potencia_total_kva, perdida_total, capacidad_transformador,
+                      nodos_inicio, nodos_final, usuarios, distancias, df_regulacion):
+    from reportlab.lib.pagesizes import landscape, letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib import colors
+
+    doc = SimpleDocTemplate("informe_corto.pdf", pagesize=landscape(letter))
+    estilos = getSampleStyleSheet()
+    elementos = []
+
+    estilo_titulo = ParagraphStyle('titulo', fontSize=20, alignment=TA_CENTER, spaceAfter=20, fontName='Helvetica-Bold')
+    elementos.append(Paragraph("Resumen del Informe de Red Eléctrica", estilo_titulo))
+
+    resumen_texto = f"""
+    <b>Potencia total instalada:</b> {potencia_total_kva:.2f} kVA<br/>
+    <b>Pérdidas totales:</b> {perdida_total:.2f} kW<br/>
+    <b>Capacidad del transformador:</b> {capacidad_transformador} kVA<br/>
+    """
+    elementos.append(Paragraph(resumen_texto, estilos['Normal']))
+    elementos.append(Spacer(1, 12))
+
+    # Tabla 1
+    tabla1_data = [['Nodo Inicio', 'Nodo Final', 'Usuarios', 'Distancia (m)']]
+    for i in range(len(nodos_inicio)):
+        tabla1_data.append([
+            str(nodos_inicio[i]), str(nodos_final[i]),
+            str(usuarios[i]), f"{distancias[i]:.2f}"
+        ])
+    tabla1 = Table(tabla1_data, colWidths=[60]*4)
+    tabla1.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.grey),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 8),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+    ]))
+    elementos.append(tabla1)
+    elementos.append(Spacer(1,10))
+
+    # Tabla 2 - Regulación
+    if df_regulacion is not None:
+        tabla2_data = [list(df_regulacion.columns)]
+        for row in df_regulacion.itertuples(index=False):
+            tabla2_data.append([str(cell) for cell in row])
+        tabla2 = Table(tabla2_data, colWidths=[80]*len(df_regulacion.columns))
+        tabla2.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.darkblue),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 8),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ]))
+        elementos.append(tabla2)
+
+    doc.build(elementos)
+    print("✅ PDF corto generado: informe_corto.pdf")
+
 
 def main(ruta_archivo='datos_circuito.xlsx'):
     archivo = ruta_archivo
@@ -1775,7 +1836,7 @@ def main(ruta_archivo='datos_circuito.xlsx'):
     df_proyeccion, df_voltajes, df_regulacion = calcular_regulacion_y_proyeccion(potencia_total_kva, df_parametros, Yrr, Y_r0, slack_index, nodos, nodo_slack)
     
     # Generar informe PDF con todos los datos calculados
-    potencia_total_kva = df_conexiones['P'].sum()  # O tu cálculo específico
+    potencia_total_kva = df_conexiones['S'].sum()  # O tu cálculo específico
 
     generar_informe_pdf(df_info, df_parametros, factor_coinc, potencia_total_kva,
                     df_conexiones, df_voltajes, df_regulacion,
@@ -1799,7 +1860,7 @@ def main_con_ruta_archivo(ruta_excel):
     df_proyeccion, df_voltajes, df_regulacion = calcular_regulacion_y_proyeccion(potencia_total_kva, df_parametros, Yrr, Y_r0, slack_index, nodos, nodo_slack)
     
     # Generar informe PDF con todos los datos calculados
-    potencia_total_kva = df_conexiones['P'].sum()  # O tu cálculo específico
+    potencia_total_kva = df_conexiones['S'].sum()  # O tu cálculo específico
 
     generar_informe_pdf(df_info, df_parametros, factor_coinc, potencia_total_kva,
                     df_conexiones, df_voltajes, df_regulacion,
@@ -1812,6 +1873,7 @@ if __name__ == "__main__":
     
 
    
+
 
 
 
