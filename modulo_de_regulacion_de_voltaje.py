@@ -1838,7 +1838,7 @@ def main(ruta_archivo='datos_circuito.xlsx'):
     df_proyeccion, df_voltajes, df_regulacion = calcular_regulacion_y_proyeccion(potencia_total_kva, df_parametros, Yrr, Y_r0, slack_index, nodos, nodo_slack)
     
     # Generar informe PDF con todos los datos calculados
-    potencia_total_kva = df_conexiones['S'].sum()  # O tu cálculo específico
+    potencia_total_kva = df_conexiones['P'].sum()  # O tu cálculo específico
 
     generar_informe_pdf(df_info, df_parametros, factor_coinc, potencia_total_kva,
                     df_conexiones, df_voltajes, df_regulacion,
@@ -1862,7 +1862,7 @@ def main_con_ruta_archivo(ruta_excel):
     df_proyeccion, df_voltajes, df_regulacion = calcular_regulacion_y_proyeccion(potencia_total_kva, df_parametros, Yrr, Y_r0, slack_index, nodos, nodo_slack)
     
     # Generar informe PDF con todos los datos calculados
-    potencia_total_kva = df_conexiones['S'].sum()  # O tu cálculo específico
+    potencia_total_kva = df_conexiones['P'].sum()  # O tu cálculo específico
 
     generar_informe_pdf(df_info, df_parametros, factor_coinc, potencia_total_kva,
                     df_conexiones, df_voltajes, df_regulacion,
@@ -1875,6 +1875,7 @@ if __name__ == "__main__":
     
 
    
+
 
 
 
