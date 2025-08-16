@@ -1707,42 +1707,56 @@ def generar_informe_pdf(df_info, df_parametros, factor_coinc, potencia_total_kva
     ]
 
     crear_pdf("informe_red_electrica.pdf", secciones, nodos_inicio, nodos_final, usuarios, distancias, capacidad_transformador)
+
 def obtener_datos_para_pdf_corto(ruta_excel):
+    """
+    Obtiene los datos necesarios para generar un informe corto a partir de un archivo Excel.
+    """
     import os
-    from tus_funciones import (  # Ajusta estos imports si están en otros archivos
-        cargar_y_preparar_datos,
-        calcular_flujo_carga_y_perdidas,
-        calcular_regulacion_y_proyeccion
-    )
 
     carpeta_excel = os.path.dirname(ruta_excel)
-    os.chdir(carpeta_excel)
     archivo = os.path.basename(ruta_excel)
-    
-    # 1. Cargar datos y preparar variables
-    (df_conexiones, df_parametros, df_info, tipo_conductor, area_lote, capacidad_transformador,
-     usuarios, distancias, nodos_inicio, nodos_final) = cargar_y_preparar_datos(archivo)   
-    
-    # 2. Cálculo de flujo de carga y pérdidas
-    df_conexiones, perdida_total, proyeccion_perdidas, potencia_total_kva, \
-    Yrr, Y_r0, slack_index, nodos, nodo_slack, factor_coinc = calcular_flujo_carga_y_perdidas(df_conexiones, df_parametros, area_lote)
-    
-    # 3. Voltajes y regulación
-    df_proyeccion, df_voltajes, df_regulacion = calcular_regulacion_y_proyeccion(
-        potencia_total_kva, df_parametros, Yrr, Y_r0, slack_index, nodos, nodo_slack
+    ruta_completa = os.path.join(carpeta_excel, archivo)
+
+    # Cargar datos desde la función que ya está en este módulo
+    df_conexiones, df_parametros, df_info, tipo_conductor, area_lote, capacidad_transformador, proyecto_numero, proyecto_nombre, transformador_numero, usuarios, distancias, nodos_inicio, nodos_final = cargar_datos_circuito(ruta_completa)
+
+    # Preparar datos eléctricos
+    conductores = bibloteca_conductores()
+    sep_fases = 0.2032
+    radio_cond = 0.00735
+
+    df_conexiones['resistencia_vano'] = df_conexiones.apply(
+        lambda row: resistencia_por_vano(conductores, tipo_conductor, row['distancia']), axis=1)
+    df_conexiones['reactancia_vano'] = df_conexiones.apply(
+        lambda row: reactancia_por_vano_geometrica(row['distancia'], sep_fases, radio_cond), axis=1)
+    df_conexiones['Z_vano'] = df_conexiones.apply(calcular_impedancia, axis=1)
+    df_conexiones['Y_vano'] = df_conexiones['Z_vano'].apply(calcular_admitancia)
+
+    # Cálculos de carga y pérdidas
+    total_usuarios = df_conexiones['usuarios'].sum()
+    factor_coinc = factor_coincidencia(total_usuarios)
+    df_conexiones, potencia_total_kva, _ = calcular_potencia_carga(df_conexiones, area_lote)
+    Y, Yrr, Y_r0, nodos, slack_index = calcular_matriz_admitancia(df_conexiones)
+    V, _ = calcular_voltajes_nodales(Yrr, Y_r0, slack_index, nodos)
+    df_conexiones = calcular_corrientes(df_conexiones, V)
+    df_conexiones, perdida_total, _ = calcular_perdidas_y_proyeccion(df_conexiones)
+
+    # Regulación de voltaje
+    _, _, df_regulacion = calcular_regulacion_y_proyeccion(
+        potencia_total_kva, df_parametros, Yrr, Y_r0, slack_index, nodos, nodos[slack_index]
     )
 
-    # 4. Retornar datos que necesita el PDF corto
+    # Retornar datos para PDF corto
     return (
-        df_info, 
-        potencia_total_kva, 
-        perdida_total, 
+        df_info,
+        potencia_total_kva,
+        perdida_total,
         capacidad_transformador,
-        nodos_inicio, 
-        nodos_final, 
-        usuarios, 
-        distancias, 
-        df_voltajes, 
+        nodos_inicio,
+        nodos_final,
+        usuarios,
+        distancias,
         df_regulacion
     )
 
@@ -1798,6 +1812,7 @@ if __name__ == "__main__":
     
 
    
+
 
 
 
