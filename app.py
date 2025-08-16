@@ -1,48 +1,40 @@
 # app.py
 import streamlit as st
+import modulo_de_regulacion_de_voltaje as mod
 import tempfile
 import os
-import modulo_de_regulacion_de_voltaje as mod
-from utilidades_red import generar_pdf_corto  # Asegúrate que esta función ya existe
 
-st.title("📊 Generador de Informe Corto de Red Eléctrica")
+st.title("Generador de Informes de Red Eléctrica")
 
 # Subir archivo Excel
-archivo_excel = st.file_uploader("Selecciona el archivo Excel", type=["xlsx", "xls"])
+uploaded_file = st.file_uploader("Selecciona el archivo Excel", type=["xls", "xlsx"])
 
-if archivo_excel is not None:
-    # Guardar temporalmente el archivo
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-        tmp.write(archivo_excel.read())
-        ruta_temp = tmp.name
+# Selector de tipo de informe
+tipo_informe = st.selectbox("¿Qué tipo de informe deseas generar?", ["Completo", "Corto"])
 
-    st.success("Archivo cargado correctamente. Procesando...")
+if uploaded_file is not None:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_file:
+        tmp_file.write(uploaded_file.read())
+        ruta_excel = tmp_file.name
 
     try:
-        # Obtener los datos necesarios desde el módulo
-        (df_info, potencia_total_kva, perdida_total, capacidad_transformador,
-         nodos_inicio, nodos_final, usuarios, distancias, df_voltajes, df_regulacion) = mod.obtener_datos_para_pdf_corto(ruta_temp)
+        if tipo_informe == "Completo":
+            st.write("Generando informe completo...")
+            mod.main_con_ruta_archivo(ruta_excel)
+            nombre_pdf = "informe_red_electrica.pdf"
 
-        # Nombre del PDF generado
-        nombre_pdf = "informe_corto_generado.pdf"
+        else:
+            st.write("Generando informe corto...")
+            datos = mod.obtener_datos_para_pdf_corto(ruta_excel)
+            mod.generar_pdf_corto(*datos)
+            nombre_pdf = "informe_corto.pdf"
 
-        # Generar PDF
-        generar_pdf_corto(df_info, potencia_total_kva, perdida_total,
-                          capacidad_transformador, nodos_inicio, nodos_final,
-                          usuarios, distancias, df_voltajes, df_regulacion,
-                          nombre_pdf)
-
-        # Mostrar botón para descargar el PDF
+        # Descargar
         with open(nombre_pdf, "rb") as pdf_file:
-            st.download_button(
-                label="📥 Descargar Informe PDF Corto",
-                data=pdf_file,
-                file_name=nombre_pdf,
-                mime="application/pdf"
-            )
+            PDFbyte = pdf_file.read()
+            st.download_button(label="Descargar Informe PDF", data=PDFbyte, file_name=nombre_pdf, mime='application/pdf')
 
     except Exception as e:
-        st.error(f"❌ Error al generar el informe: {e}")
+        st.error(f"Ocurrió un error: {e}")
 
-    # Limpiar archivo temporal
-    os.remove(ruta_temp)
+    os.remove(ruta_excel)
