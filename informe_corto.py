@@ -1,4 +1,13 @@
-# informe_dashboard.py
+# app_dashboard.py
+
+import streamlit as st
+import io
+import pandas as pd
+from reportlab.lib.pagesizes import landscape, letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepInFrame
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib import colors
 
 from modulo_de_regulacion_de_voltaje import (
     cargar_datos_circuito, resistencia_por_vano, reactancia_por_vano_geometrica,
@@ -9,27 +18,24 @@ from modulo_de_regulacion_de_voltaje import (
     crear_grafico_nodos, crear_grafico_voltajes, crear_grafico_proyeccion
 )
 
-import pandas as pd
-from reportlab.lib.pagesizes import landscape, letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, Frame, KeepInFrame
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.enums import TA_CENTER
-from reportlab.lib import colors
+# ==========================
+# Función para generar PDF
+# ==========================
+def generar_pdf_dashboard_bytes(potencia_total_kva, perdida_total, capacidad_transformador,
+                               nodos_inicio, nodos_final, usuarios, distancias,
+                               df_regulacion, df_voltajes, df_proyeccion,
+                               df_corrientes):
 
-def generar_pdf_dashboard_optimizado(potencia_total_kva, perdida_total, capacidad_transformador,
-                                     nodos_inicio, nodos_final, usuarios, distancias,
-                                     df_regulacion, df_voltajes, df_proyeccion,
-                                     df_corrientes):
-
-    doc = SimpleDocTemplate("informe_dashboard.pdf", pagesize=landscape(letter), rightMargin=15, leftMargin=15, topMargin=15, bottomMargin=15)
-    estilos = getSampleStyleSheet()
+    buffer_pdf = io.BytesIO()
+    doc = SimpleDocTemplate(buffer_pdf, pagesize=landscape(letter), rightMargin=15, leftMargin=15, topMargin=15, bottomMargin=15)
     elementos = []
 
+    # Título
     estilo_titulo = ParagraphStyle('titulo', fontSize=16, alignment=TA_CENTER, spaceAfter=10, fontName='Helvetica-Bold')
     elementos.append(Paragraph("Informe de Red Eléctrica - Dashboard", estilo_titulo))
     elementos.append(Spacer(1,6))
 
-    # --- Preparar tablas ---
+    # --- Tablas ---
     # Tabla Nodos
     tabla_nodos_data = [['Nodo Inicio','Nodo Final','Usuarios','Distancia (m)']]
     for i in range(len(nodos_inicio)):
@@ -45,7 +51,7 @@ def generar_pdf_dashboard_optimizado(potencia_total_kva, perdida_total, capacida
         ('GRID',(0,0),(-1,-1),0.25,colors.black)
     ]))
 
-    # Tabla Voltajes
+    # Tabla Regulación
     tabla_volt_data = [list(df_regulacion.columns)]
     for row in df_regulacion.itertuples(index=False):
         tabla_volt_data.append([str(cell) for cell in row])
@@ -73,7 +79,7 @@ def generar_pdf_dashboard_optimizado(potencia_total_kva, perdida_total, capacida
         ('GRID',(0,0),(-1,-1),0.25,colors.black)
     ]))
 
-    # --- Preparar gráficos ---
+    # --- Gráficos ---
     buf_nodos = crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias, capacidad_transformador)
     buf_voltajes = crear_grafico_voltajes(df_voltajes)
     buf_proy = crear_grafico_proyeccion(df_proyeccion)
@@ -82,11 +88,10 @@ def generar_pdf_dashboard_optimizado(potencia_total_kva, perdida_total, capacida
     img_volt = Image(buf_voltajes, width=250, height=150)
     img_proy = Image(buf_proy, width=250, height=150)
 
-    # --- Columnas: tablas a la izquierda, gráficos a la derecha ---
+    # --- Frames horizontales ---
     left_frame_content = [tabla_nodos, Spacer(1,2), tabla_volt, Spacer(1,2), tabla_corr]
     right_frame_content = [img_nodos, Spacer(1,2), img_volt, Spacer(1,2), img_proy]
 
-    # Mantener todo dentro de un frame horizontal
     k_left = KeepInFrame(250, 600, left_frame_content)
     k_right = KeepInFrame(300, 600, right_frame_content)
 
@@ -95,37 +100,51 @@ def generar_pdf_dashboard_optimizado(potencia_total_kva, perdida_total, capacida
     elementos.append(main_table)
 
     doc.build(elementos)
-    print("✅ PDF Dashboard optimizado generado: informe_dashboard.pdf")
+    buffer_pdf.seek(0)
+    return buffer_pdf
 
+# ==========================
+# Streamlit App
+# ==========================
+st.title("Dashboard de Red Eléctrica")
 
-def generar_datos_y_pdf_dashboard():
-    archivo = 'datos_circuito.xlsx'
-    df_conexiones, df_parametros, df_info, tipo_conductor, area_lote, capacidad_transformador, proyecto_numero, proyecto_nombre, transformador_numero, usuarios, distancias, nodos_inicio, nodos_final = cargar_datos_circuito(archivo)
+archivo = 'datos_circuito.xlsx'
 
-    conductores = bibloteca_conductores()
-    sep_fases = 0.2032
-    radio_cond = 0.00735
+# --- Cargar datos y calcular ---
+df_conexiones, df_parametros, df_info, tipo_conductor, area_lote, capacidad_transformador, proyecto_numero, proyecto_nombre, transformador_numero, usuarios, distancias, nodos_inicio, nodos_final = cargar_datos_circuito(archivo)
 
-    df_conexiones['resistencia_vano'] = df_conexiones.apply(lambda row: resistencia_por_vano(conductores, tipo_conductor, row['distancia']), axis=1)
-    df_conexiones['reactancia_vano'] = df_conexiones.apply(lambda row: reactancia_por_vano_geometrica(row['distancia'], sep_fases, radio_cond), axis=1)
-    df_conexiones['Z_vano'] = df_conexiones.apply(calcular_impedancia, axis=1)
-    df_conexiones['Y_vano'] = df_conexiones['Z_vano'].apply(calcular_admitancia)
+conductores = bibloteca_conductores()
+sep_fases = 0.2032
+radio_cond = 0.00735
 
-    total_usuarios = df_conexiones['usuarios'].sum()
-    factor_coinc = factor_coincidencia(total_usuarios)
-    df_conexiones, potencia_total_kva, _ = calcular_potencia_carga(df_conexiones, area_lote)
-    Y, Yrr, Y_r0, nodos, slack_index = calcular_matriz_admitancia(df_conexiones)
-    V, _ = calcular_voltajes_nodales(Yrr, Y_r0, slack_index, nodos)
-    df_conexiones = calcular_corrientes(df_conexiones, V)
-    df_conexiones, perdida_total, df_corrientes = calcular_perdidas_y_proyeccion(df_conexiones)
+df_conexiones['resistencia_vano'] = df_conexiones.apply(lambda row: resistencia_por_vano(conductores, tipo_conductor, row['distancia']), axis=1)
+df_conexiones['reactancia_vano'] = df_conexiones.apply(lambda row: reactancia_por_vano_geometrica(row['distancia'], sep_fases, radio_cond), axis=1)
+df_conexiones['Z_vano'] = df_conexiones.apply(calcular_impedancia, axis=1)
+df_conexiones['Y_vano'] = df_conexiones['Z_vano'].apply(calcular_admitancia)
 
-    df_proyeccion, df_voltajes, df_regulacion = calcular_regulacion_y_proyeccion(potencia_total_kva, df_parametros, Yrr, Y_r0, slack_index, nodos, nodos[slack_index])
+total_usuarios = df_conexiones['usuarios'].sum()
+factor_coinc = factor_coincidencia(total_usuarios)
+df_conexiones, potencia_total_kva, _ = calcular_potencia_carga(df_conexiones, area_lote)
+Y, Yrr, Y_r0, nodos, slack_index = calcular_matriz_admitancia(df_conexiones)
+V, _ = calcular_voltajes_nodales(Yrr, Y_r0, slack_index, nodos)
+df_conexiones = calcular_corrientes(df_conexiones, V)
+df_conexiones, perdida_total, df_corrientes = calcular_perdidas_y_proyeccion(df_conexiones)
 
-    generar_pdf_dashboard_optimizado(potencia_total_kva, perdida_total, capacidad_transformador,
-                                     nodos_inicio, nodos_final, usuarios, distancias,
-                                     df_regulacion, df_voltajes, df_proyeccion,
-                                     df_corrientes)
+df_proyeccion, df_voltajes, df_regulacion = calcular_regulacion_y_proyeccion(
+    potencia_total_kva, df_parametros, Yrr, Y_r0, slack_index, nodos, nodos[slack_index]
+)
 
+# --- Generar PDF como bytes ---
+pdf_bytes = generar_pdf_dashboard_bytes(
+    potencia_total_kva, perdida_total, capacidad_transformador,
+    nodos_inicio, nodos_final, usuarios, distancias,
+    df_regulacion, df_voltajes, df_proyeccion, df_corrientes
+)
 
-if __name__ == "__main__":
-    generar_datos_y_pdf_dashboard()
+# --- Botón de descarga ---
+st.download_button(
+    label="📄 Descargar PDF Dashboard",
+    data=pdf_bytes,
+    file_name="informe_dashboard.pdf",
+    mime="application/pdf"
+)
