@@ -886,21 +886,23 @@ def encabezado(canvas, doc):
 # Aplica una imagen de fondo al PDF.
 # Recibe: canvas, doc, ruta_imagen_fondo (string)
 # Devuelve: nada (dibuja sobre canvas)
-def aplicar_fondo(cnv, doc, ruta_imagen_fondo):
+def aplicar_fondo(cnv, doc, url_imagen_fondo):
     try:
         ancho, alto = doc.pagesize
-        imagen_fondo = ImageReader(ruta_imagen_fondo)
-        cnv.drawImage(imagen_fondo, 0, 0, width=ancho, height=alto)
+        # Descargar la imagen desde GitHub
+        with urllib.request.urlopen(url_imagen_fondo) as u:
+            imagen = ImageReader(BytesIO(u.read()))
+        cnv.drawImage(imagen, 0, 0, width=ancho, height=alto)
     except Exception as e:
-        print(f"Error al aplicar fondo: {e}")
+        print(f"⚠️ Error al aplicar fondo: {e}")
 
 # Función #7.1.3: fondo_y_encabezado
 # Combina la función de aplicar fondo y encabezado para el PDF.
 # Recibe: canvas, doc
 # Devuelve: nada (dibuja sobre canvas)
 def fondo_y_encabezado(cnv, doc):
-    ruta_imagen_fondo = r"C:\Users\José Nikol Cruz\Desktop\José Nikol Cruz\Python Programas\Imagen Encabezado.jpg"
-    aplicar_fondo(cnv, doc, ruta_imagen_fondo)
+    url_imagen_fondo = "https://raw.githubusercontent.com/josecruzp-enee/prueba1.0/main/Imagen%20Encabezado.jpg"
+    aplicar_fondo(cnv, doc, url_imagen_fondo)
     encabezado(cnv, doc)
 
 
@@ -1873,6 +1875,7 @@ if __name__ == "__main__":
     
 
    
+
 
 
 
