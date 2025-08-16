@@ -1,11 +1,12 @@
-# app_dashboard.py
+
 
 import streamlit as st
 import io
 import pandas as pd
+import matplotlib.pyplot as plt
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepInFrame
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib import colors
 
@@ -14,9 +15,56 @@ from modulo_de_regulacion_de_voltaje import (
     calcular_impedancia, calcular_admitancia, calcular_potencia_carga,
     calcular_matriz_admitancia, calcular_voltajes_nodales,
     calcular_corrientes, calcular_perdidas_y_proyeccion, bibloteca_conductores,
-    factor_coincidencia, calcular_regulacion_y_proyeccion,
-    crear_grafico_nodos, crear_grafico_voltajes, crear_grafico_proyeccion
+    factor_coincidencia, calcular_regulacion_y_proyeccion
 )
+
+# ==========================
+# Funciones de gráficos
+# ==========================
+def crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias, capacidad_transformador):
+    fig, ax = plt.subplots(figsize=(4,2))
+    x = list(range(len(nodos_inicio)))
+    ax.bar(x, usuarios, color='skyblue')
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{ini}->{fin}" for ini, fin in zip(nodos_inicio, nodos_final)], rotation=45)
+    ax.set_ylabel("Usuarios")
+    ax.set_title("Usuarios por tramo")
+    ax.grid(True, linestyle='--', alpha=0.5)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='PNG', bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def crear_grafico_voltajes(df_voltajes):
+    fig, ax = plt.subplots(figsize=(4,2))
+    # Convertir a valor absoluto si es complejo
+    df_voltajes['Voltaje_abs'] = df_voltajes['Voltaje'].apply(lambda v: abs(v))
+    ax.plot(df_voltajes['Nodo'], df_voltajes['Voltaje_abs'], marker='o', color='orange')
+    ax.set_xlabel('Nodo')
+    ax.set_ylabel('Voltaje (V)')
+    ax.set_title('Voltajes Nodos')
+    ax.grid(True, linestyle='--', alpha=0.5)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='PNG', bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def crear_grafico_proyeccion(df_proyeccion):
+    fig, ax = plt.subplots(figsize=(4,2))
+    # Asegurarse que la columna 'Proyeccion' sea float
+    df_proyeccion['Proyeccion'] = df_proyeccion['Proyeccion'].apply(lambda x: float(abs(x)))
+    ax.plot(df_proyeccion['Nodo'], df_proyeccion['Proyeccion'], marker='s', color='green')
+    ax.set_xlabel('Nodo')
+    ax.set_ylabel('Proyección kVA')
+    ax.set_title('Proyección de Demanda')
+    ax.grid(True, linestyle='--', alpha=0.5)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='PNG', bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
 
 # ==========================
 # Función para generar PDF
@@ -30,13 +78,11 @@ def generar_pdf_dashboard_bytes(potencia_total_kva, perdida_total, capacidad_tra
     doc = SimpleDocTemplate(buffer_pdf, pagesize=landscape(letter), rightMargin=15, leftMargin=15, topMargin=15, bottomMargin=15)
     elementos = []
 
-    # Título
     estilo_titulo = ParagraphStyle('titulo', fontSize=16, alignment=TA_CENTER, spaceAfter=10, fontName='Helvetica-Bold')
     elementos.append(Paragraph("Informe de Red Eléctrica - Dashboard", estilo_titulo))
     elementos.append(Spacer(1,6))
 
     # --- Tablas ---
-    # Tabla Nodos
     tabla_nodos_data = [['Nodo Inicio','Nodo Final','Usuarios','Distancia (m)']]
     for i in range(len(nodos_inicio)):
         tabla_nodos_data.append([str(nodos_inicio[i]), str(nodos_final[i]),
@@ -51,7 +97,6 @@ def generar_pdf_dashboard_bytes(potencia_total_kva, perdida_total, capacidad_tra
         ('GRID',(0,0),(-1,-1),0.25,colors.black)
     ]))
 
-    # Tabla Regulación
     tabla_volt_data = [list(df_regulacion.columns)]
     for row in df_regulacion.itertuples(index=False):
         tabla_volt_data.append([str(cell) for cell in row])
@@ -65,7 +110,6 @@ def generar_pdf_dashboard_bytes(potencia_total_kva, perdida_total, capacidad_tra
         ('GRID',(0,0),(-1,-1),0.25,colors.black)
     ]))
 
-    # Tabla Corrientes
     tabla_corr_data = [['Nodo Ini','Nodo Fin','Tramo','|I| (A)']]
     for row in df_corrientes.itertuples(index=False):
         tabla_corr_data.append([row.nodo_inicial,row.nodo_final,row.tramo,f"{row.I:.1f}"])
@@ -88,7 +132,6 @@ def generar_pdf_dashboard_bytes(potencia_total_kva, perdida_total, capacidad_tra
     img_volt = Image(buf_voltajes, width=250, height=150)
     img_proy = Image(buf_proy, width=250, height=150)
 
-    # --- Frames horizontales ---
     left_frame_content = [tabla_nodos, Spacer(1,2), tabla_volt, Spacer(1,2), tabla_corr]
     right_frame_content = [img_nodos, Spacer(1,2), img_volt, Spacer(1,2), img_proy]
 
@@ -110,7 +153,6 @@ st.title("Dashboard de Red Eléctrica")
 
 archivo = 'datos_circuito.xlsx'
 
-# --- Cargar datos y calcular ---
 df_conexiones, df_parametros, df_info, tipo_conductor, area_lote, capacidad_transformador, proyecto_numero, proyecto_nombre, transformador_numero, usuarios, distancias, nodos_inicio, nodos_final = cargar_datos_circuito(archivo)
 
 conductores = bibloteca_conductores()
@@ -134,14 +176,12 @@ df_proyeccion, df_voltajes, df_regulacion = calcular_regulacion_y_proyeccion(
     potencia_total_kva, df_parametros, Yrr, Y_r0, slack_index, nodos, nodos[slack_index]
 )
 
-# --- Generar PDF como bytes ---
 pdf_bytes = generar_pdf_dashboard_bytes(
     potencia_total_kva, perdida_total, capacidad_transformador,
     nodos_inicio, nodos_final, usuarios, distancias,
     df_regulacion, df_voltajes, df_proyeccion, df_corrientes
 )
 
-# --- Botón de descarga ---
 st.download_button(
     label="📄 Descargar PDF Dashboard",
     data=pdf_bytes,
