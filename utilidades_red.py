@@ -8,7 +8,7 @@ Created on Sat Aug  9 12:57:23 2025
 
 import os
 import modulo_de_regulacion_de_voltaje as mod
-from modulo_de_regulacion_de_voltaje import (   # quité el punto porque no estás en un paquete
+from modulo_de_regulacion_de_voltaje import (   
     cargar_y_preparar_datos,
     calcular_flujo_carga_y_perdidas,
     calcular_regulacion_y_proyeccion
@@ -58,6 +58,14 @@ def obtener_datos_para_pdf_corto(ruta_excel):
 
     # 4. Retornar datos
     return (
-        df_info,
-        potencia_total_kva,
+    df_info,
+    potencia_total_kva,
+    perdida_total,
+    capacidad_transformador,
+    nodos_inicio,
+    nodos_final,
+    usuarios,
+    distancias,
+    df_regulacion
+)
 
