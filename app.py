@@ -2,6 +2,7 @@ import streamlit as st
 import modulo_de_regulacion_de_voltaje as mod
 import tempfile
 import os
+import urllib
 
 st.title("Generador de Informes de Red Eléctrica")
 
@@ -38,4 +39,5 @@ if uploaded_file is not None:
         st.error(f"Ocurrió un error: {e}")
 
     os.remove(ruta_excel)
+
 
