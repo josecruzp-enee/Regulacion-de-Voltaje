@@ -2,43 +2,38 @@ Análisis de Regulación en red secundaria.
 
 Proyecto: Análisis de regulación de voltaje
 
+Definición: 
 Este repositorio contiene scripts para calcular flujo de carga, pérdidas, regulación de voltaje y generar informes PDF (versión larga y versión corta).
 
 Estructura y descripción de archivos
+1.módulo_de_regulacion_de_voltaje.py
+  Lógica principal de análisis (carga de datos, flujo de carga, pérdidas, regulación, proyecciones).
 
-módulo_de_regulacion_de_voltaje.py
-Lógica principal de análisis (carga de datos, flujo de carga, pérdidas, regulación, proyecciones).
+2.informe_corto.py
+  Genera el informe corto (1 página/3 columnas) en PDF usando ReportLab.
+  Lee resultados desde el Excel/procesamiento y arma tablas + gráficos.
 
-Suele exponer una función tipo main_con_ruta_archivo(ruta_excel) o similar que genera el informe largo (PDF).
+3.utilidades_red.py
+  Funciones auxiliares (cálculos, limpieza de datos, formatos, etc.) usadas por los módulos anteriores.
 
-informe_corto.py
-Genera el informe corto (1 página/3 columnas) en PDF usando ReportLab.
-Lee resultados desde el Excel/procesamiento y arma tablas + gráficos.
+4.aplicación.py
+  Script de entrada (launcher). Puedes ejecutarlo para correr el flujo completo o servir de ejemplo de uso.
 
-utilidades_red.py
-Funciones auxiliares (cálculos, limpieza de datos, formatos, etc.) usadas por los módulos anteriores.
+5.datos_circuito.xlsx
+  Archivo de entrada con la definición del circuito, parámetros y datos para el análisis.
 
-aplicación.py
-Script de entrada (launcher). Puedes ejecutarlo para correr el flujo completo o servir de ejemplo de uso.
+6.Imagen encabezada.jpg
+  Imagen usada como fondo/encabezado en los PDF.
 
-datos_circuito.xlsx
-Archivo de entrada con la definición del circuito, parámetros y datos para el análisis.
+7.requisitos.txt
+  Dependencias de Python (por ejemplo reportlab, pandas, numpy).
 
-Imagen encabezada.jpg
-Imagen usada como fondo/encabezado en los PDF.
+8.LÉAME.md
+  Este archivo de documentación.
 
-Asegúrate de que el código usa exactamente este nombre (incluyendo mayúsculas/minúsculas y espacio).
+9.LICENCIA
+  Licencia del proyecto.
 
-requisitos.txt
-Dependencias de Python (por ejemplo reportlab, pandas, numpy).
+10.devcontainer/ y devcontainer.json
+  Configuración para GitHub Codespaces/Dev Containers (entorno reproducible).
 
-LÉAME.md
-Este archivo de documentación.
-
-LICENCIA
-Licencia del proyecto.
-
-.devcontainer/ y devcontainer.json
-Configuración para GitHub Codespaces/Dev Containers (entorno reproducible).
-
-Si usas Codespaces, coloca devcontainer.json dentro de .devcontainer/ (recomendado).
