@@ -1,169 +1,247 @@
-# informe_corto.py
-
-import streamlit as st
-import io
-import pandas as pd
-from reportlab.lib.pagesizes import landscape, letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepInFrame
+from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.units import inch
 from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader
+import pandas as pd
+import numpy as np
+from reportlab.pdfbase.pdfmetrics import stringWidth
+from modulo_de_regulacion_de_voltaje import obtener_datos_para_pdf_corto, preparar_info_proyecto
 
-from modulo_de_regulacion_de_voltaje import (
-    cargar_datos_circuito, resistencia_por_vano, reactancia_por_vano_geometrica,
-    calcular_impedancia, calcular_admitancia, calcular_potencia_carga,
-    calcular_matriz_admitancia, calcular_voltajes_nodales,
-    calcular_corrientes, calcular_perdidas_y_proyeccion, bibloteca_conductores,
-    factor_coincidencia, calcular_regulacion_y_proyeccion,
-    crear_grafico_nodos, crear_grafico_voltajes, crear_grafico_proyeccion
+
+# Dimensiones de la página y margen
+ancho_pagina, alto_pagina = landscape(letter)
+margen = 20
+
+# Proporciones de las columnas (ej: 40%, 40%, 20%)
+ancho_col1 = (ancho_pagina - 4*margen) * 0.35
+ancho_col2 = (ancho_pagina - 4*margen) * 0.35
+ancho_col3 = (ancho_pagina - 4*margen) * 0.30
+
+# Posición horizontal de cada columna
+x_col1 = margen
+x_col2 = x_col1 + ancho_col1 + margen
+x_col3 = x_col2 + ancho_col2 + margen
+
+# Crear frames
+frame1 = Frame(x_col1, margen, ancho_col1, alto_pagina - 2*margen, id='col1')
+frame2 = Frame(x_col2, margen, ancho_col2, alto_pagina - 2*margen, id='col2')
+frame3 = Frame(x_col3, margen, ancho_col3, alto_pagina - 2*margen, id='col3')
+
+# Función para aplicar fondo
+def aplicar_fondo(cnv, doc, ruta_imagen_fondo):
+    try:
+        ancho, alto = doc.pagesize
+        imagen_fondo = ImageReader(ruta_imagen_fondo)
+        cnv.drawImage(imagen_fondo, 0, 0, width=ancho, height=alto)
+    except Exception as e:
+        print(f"Error al aplicar fondo: {e}")
+
+ruta_imagen_fondo = r"C:\Users\José Nikol Cruz\Desktop\José Nikol Cruz\Python Programas\Imagen Encabezado.jpg"
+# Plantilla con tres columnas y fondo
+plantilla = PageTemplate(
+    id='tres_columnas_con_fondo',
+    frames=[frame1, frame2, frame3],
+    onPage=lambda cnv, doc: aplicar_fondo(cnv, doc, "Imagen Encabezado.jpg")
 )
 
-# ==========================
-# Función para generar PDF
-# ==========================
-def generar_pdf_dashboard_bytes(potencia_total_kva, perdida_total, capacidad_transformador,
-                               nodos_inicio, nodos_final, usuarios, distancias,
-                               df_regulacion, df_voltajes, df_proyeccion,
-                               df_corrientes):
+# Crear documento
+doc = BaseDocTemplate(
+    "Informe_Corto.pdf",
+    pagesize=landscape(letter),
+    pageTemplates=[plantilla]
+)
 
-    import io
-    from reportlab.lib.pagesizes import landscape, letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepInFrame
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER
-    from reportlab.lib import colors
+# ---------------------------
+# Función para crear tablas ajustadas al contenido
+# ---------------------------
+def crear_tabla(df, encabezados, ancho_frame):
+    """
+    Crea una tabla de ReportLab donde el ancho total se ajusta al ancho del frame/columna.
+    - df: DataFrame con los datos.
+    - encabezados: lista con los nombres de las columnas.
+    - ancho_frame: ancho disponible del frame donde irá la tabla.
+    """
+    estilo_texto = ParagraphStyle(
+        name="Pequeno",
+        fontSize=8,
+        leading=8,
+        alignment=TA_CENTER
+    )
 
-    buffer_pdf = io.BytesIO()
-    doc = SimpleDocTemplate(buffer_pdf, pagesize=landscape(letter), rightMargin=15, leftMargin=15, topMargin=15, bottomMargin=15)
+    # Convertir encabezados y celdas a Paragraph
+    data = [[Paragraph(str(h), estilo_texto) for h in encabezados]]
+    for _, row in df.iterrows():
+        fila = [Paragraph(str(v), estilo_texto) for v in row]
+        data.append(fila)
+
+    # Número de columnas
+    n_cols = len(encabezados)
+
+    # Dividir ancho del frame entre columnas
+    colWidths = [ancho_frame / n_cols] * n_cols
+
+    # Crear tabla
+    tabla = Table(data, colWidths=colWidths, hAlign='LEFT')
+    tabla.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#d3d3d3")),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTSIZE', (0,0), (-1,-1), 10),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('TOPPADDING', (0,0), (-1,-1), 2),
+    ]))
+    return tabla
+
+
+def generar_pdf_corto(ruta_excel, nombre_pdf="Informe_Corto.pdf"):
+    # ===============================
+    # 1. Obtener datos desde Excel
+    # ===============================
+    (df_info, df_parametros, potencia_total_kva, perdida_total, capacidad_transformador,
+     nodos_inicio, nodos_final, usuarios, distancias,
+     df_voltajes, df_regulacion, df_proyeccion, proyeccion_perdidas,
+     grafico_nodos, buf_grafico_voltajes, buf_grafico_demanda,
+     df_tabla_demanda, df_conexiones, elementos_corrientes, factor_coinc) = obtener_datos_para_pdf_corto(ruta_excel)
+    print(elementos_corrientes)
+    # ===============================
+    # 2. Preparar tablas
+    # ===============================
+    # Encabezados
+    encabezados_demanda = ['Año', 'Demanda (kVA)', 'Pérdidas (kWh)', '% Carga (%)']
+    encabezados_regulacion = ['Nodo', 'Voltaje (p.u.)', 'Voltaje (V)', 'Regulación (%)']
+
+
+    # Tabla demanda: asegurar que son float
+    df_tabla_demanda['Demanda (kVA)'] = df_tabla_demanda['Demanda (kVA)'].astype(float)
+    df_tabla_demanda['Pérdidas (kWh)'] = df_tabla_demanda['Pérdidas (kWh)'].apply(lambda x: float(str(x).replace(',', '')))
+    df_tabla_demanda['% Carga (%)'] = df_tabla_demanda['% Carga (%)']
+
+    # Tabla regulación: valores reales y normalizados
+    df_regulacion_real = pd.DataFrame({
+        'Nodo': df_regulacion['Nodo'].apply(lambda x: int(np.real(x))),
+        'Voltaje (p.u.)': df_regulacion['Voltaje (p.u.)'].apply(lambda x: round(abs(x)/240, 3)),
+        'Voltaje (V)': df_regulacion['Voltaje Absoluto (V)'].apply(lambda x: round(abs(x)/240, 2)),
+        'Regulación (%)': df_regulacion['Regulación (%)'].apply(lambda x: round(np.real(x), 2))
+    })
+
+    # Info del proyecto y parámetros preparados
+    df_info_pdf, df_parametros_pdf = preparar_info_proyecto(df_info, df_parametros, factor_coinc, potencia_total_kva)
+
+    # ===============================
+    # 3. Crear PDF
+    # ===============================
+    doc = BaseDocTemplate(nombre_pdf, pagesize=landscape(letter), pageTemplates=[plantilla])
     elementos = []
 
-    # Título
-    estilo_titulo = ParagraphStyle('titulo', fontSize=16, alignment=TA_CENTER, spaceAfter=10, fontName='Helvetica-Bold')
-    elementos.append(Paragraph("Informe de Red Eléctrica - Dashboard", estilo_titulo))
-    elementos.append(Spacer(1,6))
+    estilo_pequeno = ParagraphStyle(name="Pequeno", fontSize=8, leading=10)
 
-    # --- Tablas ---
-    # Tabla Nodos
-    tabla_nodos_data = [['Nodo Inicio','Nodo Final','Usuarios','Distancia (m)']]
-    for i in range(len(nodos_inicio)):
-        tabla_nodos_data.append([str(nodos_inicio[i]), str(nodos_final[i]),
-                                 str(usuarios[i]), f"{distancias[i]:.2f}"])
-    tabla_nodos = Table(tabla_nodos_data, colWidths=[40]*4)
-    tabla_nodos.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,0), colors.grey),
-        ('TEXTCOLOR',(0,0),(-1,0), colors.whitesmoke),
-        ('ALIGN',(0,0),(-1,-1),'CENTER'),
-        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-        ('FONTSIZE',(0,0),(-1,-1),6),
-        ('GRID',(0,0),(-1,-1),0.25,colors.black)
-    ]))
+    # 3.1 Título
+    # Estilo para el título
+    estilo_titulo = ParagraphStyle(
+    name='TituloGrande',
+    fontSize=14,       # tamaño de la letra
+    leading=16,        # espacio entre líneas (ligeramente mayor que fontSize)
+    alignment=TA_CENTER,
+    fontName='Helvetica-Bold'
+    )
 
-    # Tabla Regulación
-    tabla_volt_data = [list(df_regulacion.columns)]
-    for row in df_regulacion.itertuples(index=False):
-        tabla_volt_data.append([str(cell) for cell in row])
-    tabla_volt = Table(tabla_volt_data, colWidths=[50]*len(df_regulacion.columns))
-    tabla_volt.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,0), colors.darkblue),
-        ('TEXTCOLOR',(0,0),(-1,0), colors.whitesmoke),
-        ('ALIGN',(0,0),(-1,-1),'CENTER'),
-        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-        ('FONTSIZE',(0,0),(-1,-1),6),
-        ('GRID',(0,0),(-1,-1),0.25,colors.black)
-    ]))
+    # Estilo para el subtítulo
+    estilo_subtitulo = ParagraphStyle(
+    name='Subtitulo',
+    fontSize=12,       # tamaño de la letra
+    leading=14,        # espacio entre líneas (ligeramente mayor que fontSize)
+    alignment=TA_CENTER,
+    fontName='Helvetica-Bold'
+    )
 
-    # Tabla Corrientes
-    tabla_corr_data = [['Nodo Ini','Nodo Fin','Tramo','|I| (A)']]
-    # Detectar si es lista o DataFrame
-    if hasattr(df_corrientes, "itertuples"):
-        # Es DataFrame
-        for row in df_corrientes.itertuples(index=False):
-            tabla_corr_data.append([row.nodo_inicial, row.nodo_final, row.tramo, f"{row.I:.1f}"])
-    else:
-        # Es lista de diccionarios
-        for row in df_corrientes:
-            tabla_corr_data.append([row['nodo_inicial'], row['nodo_final'], row['tramo'], f"{row['I']:.1f}"])
-            
-    tabla_corr = Table(tabla_corr_data, colWidths=[40]*4)
-    tabla_corr.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,0), colors.green),
-        ('TEXTCOLOR',(0,0),(-1,0), colors.whitesmoke),
-        ('ALIGN',(0,0),(-1,-1),'CENTER'),
-        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-        ('FONTSIZE',(0,0),(-1,-1),6),
-        ('GRID',(0,0),(-1,-1),0.25,colors.black)
-    ]))
 
-    # --- Gráficos ---
-    from modulo_de_regulacion_de_voltaje import crear_grafico_nodos, crear_grafico_voltajes, crear_grafico_proyeccion
-    buf_nodos = crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias, capacidad_transformador)
-    buf_voltajes = crear_grafico_voltajes(df_voltajes)
-    buf_proy = crear_grafico_proyeccion(df_proyeccion)
 
-    img_nodos = Image(buf_nodos, width=250, height=150)
-    img_volt = Image(buf_voltajes, width=250, height=150)
-    img_proy = Image(buf_proy, width=250, height=150)
+    elementos.append(Spacer(1, 40))
+    elementos.append(Paragraph("Análisis de Regulación de Voltaje de Red Secundaria y Cargabilidad de Transformador", estilo_titulo))
+    elementos.append(Spacer(1, 14))
+    
+    # 3.2 Información General
+    elementos.append(Paragraph("Información General", estilo_subtitulo))
+    tabla_info = crear_tabla(
+    df_info_pdf,
+    df_info_pdf.columns.tolist(),
+    ancho_frame=frame1._width
+    )
+    elementos.append(tabla_info)
+    elementos.append(Spacer(1, 14))
+    
+    
+    # Tabla de parámetros del proyecto
+    elementos.append(Paragraph("Parámetros del Proyecto", estilo_subtitulo))
+    tabla_parametros = crear_tabla(
+    df_parametros_pdf,
+    df_parametros_pdf.columns.tolist(),
+    ancho_frame=frame1._width  # Ajusta al ancho de la columna
+    )
+    elementos.append(tabla_parametros)
+    elementos.append(Spacer(1, 14))
 
-    # --- Frames horizontales ---
-    left_frame_content = [tabla_nodos, Spacer(1,2), tabla_volt, Spacer(1,2), tabla_corr]
-    right_frame_content = [img_nodos, Spacer(1,2), img_volt, Spacer(1,2), img_proy]
+    # 3.3 Regulación de Voltaje
+    elementos.append(Paragraph("Regulación de Voltaje (%)", estilo_subtitulo))
 
-    k_left = KeepInFrame(250, 600, left_frame_content)
-    k_right = KeepInFrame(300, 600, right_frame_content)
+    tabla_regulacion = crear_tabla(
+    df_regulacion_real,
+    encabezados_regulacion,
+    ancho_frame=frame1._width  # o frame2._width según la columna donde quieras ponerla
+    )
+    elementos.append(tabla_regulacion)
+    elementos.append(Spacer(1, 60))
+    
+    
 
-    main_table = Table([[k_left, k_right]], colWidths=[270,320])
-    main_table.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP')]))
-    elementos.append(main_table)
+    # 3.4 Demanda proyectada
+    elementos.append(Paragraph("Demanda Proyectada", estilo_subtitulo))
+    tabla_demanda = crear_tabla(
+    df_tabla_demanda,
+    encabezados_demanda,
+    ancho_frame=frame1._width  # o frame2._width si va en otra columna
+    )
+    elementos.append(tabla_demanda)
+    elementos.append(Spacer(1, 10))
 
+
+    # Limpiar elementos de corrientes para eliminar títulos duplicados
+    elementos_corrientes_limpios = [
+    e for e in elementos_corrientes 
+    if not (hasattr(e, 'getPlainText') and "Corriente" in e.getPlainText())
+    ]
+
+    # 3.5 Corrientes por vano
+    elementos.append(Paragraph("Corriente de Vanos", estilo_subtitulo))
+    # Agregamos la tabla de corrientes ya limpia
+    elementos.extend(elementos_corrientes_limpios)
+    elementos.append(Spacer(1, 12))
+
+    # 3.6 Gráficos
+    for buf_img in [buf_grafico_voltajes, buf_grafico_demanda, grafico_nodos]:
+        img = Image(buf_img)
+        img.drawHeight = 2.5*inch
+        img.drawWidth = 2.5*inch
+        elementos.append(img)
+        elementos.append(Spacer(1, 4))
+
+    # ===============================
+    # 4. Generar PDF
+    # ===============================
     doc.build(elementos)
-    buffer_pdf.seek(0)
-    return buffer_pdf
+    print(f"PDF generado: {nombre_pdf}")
 
-# ==========================
-# Streamlit App
-# ==========================
-st.title("Análisis de Regulación de Voltaje a nivel de Red Secundaria")
 
-archivo = 'datos_circuito.xlsx'
 
-# --- Cargar datos y calcular ---
-df_conexiones, df_parametros, df_info, tipo_conductor, area_lote, capacidad_transformador, \
-proyecto_numero, proyecto_nombre, transformador_numero, usuarios, distancias, nodos_inicio, nodos_final = cargar_datos_circuito(archivo)
-
-conductores = bibloteca_conductores()
-sep_fases = 0.2032
-radio_cond = 0.00735
-
-df_conexiones['resistencia_vano'] = df_conexiones.apply(lambda row: resistencia_por_vano(conductores, tipo_conductor, row['distancia']), axis=1)
-df_conexiones['reactancia_vano'] = df_conexiones.apply(lambda row: reactancia_por_vano_geometrica(row['distancia'], sep_fases, radio_cond), axis=1)
-df_conexiones['Z_vano'] = df_conexiones.apply(calcular_impedancia, axis=1)
-df_conexiones['Y_vano'] = df_conexiones['Z_vano'].apply(calcular_admitancia)
-
-total_usuarios = df_conexiones['usuarios'].sum()
-factor_coinc = factor_coincidencia(total_usuarios)
-df_conexiones, potencia_total_kva, _ = calcular_potencia_carga(df_conexiones, area_lote)
-Y, Yrr, Y_r0, nodos, slack_index = calcular_matriz_admitancia(df_conexiones)
-V, _ = calcular_voltajes_nodales(Yrr, Y_r0, slack_index, nodos)
-df_conexiones = calcular_corrientes(df_conexiones, V)
-df_conexiones, perdida_total, df_corrientes = calcular_perdidas_y_proyeccion(df_conexiones)
-
-df_proyeccion, df_voltajes, df_regulacion = calcular_regulacion_y_proyeccion(
-    potencia_total_kva, df_parametros, Yrr, Y_r0, slack_index, nodos, nodos[slack_index]
-)
-
-# --- Generar PDF como bytes ---
-pdf_bytes = generar_pdf_dashboard_bytes(
-    potencia_total_kva, perdida_total, capacidad_transformador,
-    nodos_inicio, nodos_final, usuarios, distancias,
-    df_regulacion, df_voltajes, df_proyeccion, df_corrientes
-)
-
-# --- Botón de descarga ---
-st.download_button(
-    label="📄 Descargar PDF Dashboard",
-    data=pdf_bytes,
-    file_name="informe_corto.pdf",  # <- ahora coincide con tu archivo
-    mime="application/pdf"
-)
+# --------------------------- 
+# Uso mínimo
+# --------------------------- 
+if __name__ == "__main__":
+    ruta_excel = r"C:\Users\José Nikol Cruz\Desktop\José Nikol Cruz\Python Programas\datos_circuito.xlsx"
+    generar_pdf_corto(ruta_excel)
 
 
