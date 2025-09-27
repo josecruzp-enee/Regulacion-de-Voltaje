@@ -6,6 +6,7 @@ Definición:
 Este repositorio contiene scripts para calcular flujo de carga, pérdidas, regulación de voltaje y generar informes PDF (versión larga y versión corta).
 
 Estructura y descripción de archivos
+
 1.módulo_de_regulacion_de_voltaje.py
   Lógica principal de análisis (carga de datos, flujo de carga, pérdidas, regulación, proyecciones).
 
