@@ -7,4 +7,5 @@ colorama
 reportlab
 openpyxl
 Pillow
+networkx
 
