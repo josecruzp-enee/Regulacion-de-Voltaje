@@ -1,9 +1,10 @@
-# -*- coding: utf-8 -*-
+## -*- coding: utf-8 -*-
 """
 app.py
 Interfaz Streamlit para análisis de red secundaria
 """
 
+import os
 import streamlit as st
 import pandas as pd
 from modulos import datos, calculos, matrices, voltajes
@@ -42,10 +43,7 @@ if archivo_excel is not None:
         st.write("df_parametros no es un DataFrame, contiene:", df_parametros)
 
     # Ejecutar cálculos
-    # Asegúrate de que realizar_calculos acepte estos argumentos
-    df_resultados, potencia_total, factor_coinc = calculos.realizar_calculos(
-    datos_cargados
-    )
+    df_resultados, potencia_total, factor_coinc = calculos.realizar_calculos(datos_cargados)
 
     st.subheader("📊 Resultados de Cálculo")
     st.dataframe(df_resultados)
@@ -55,29 +53,37 @@ if archivo_excel is not None:
     # Matriz de admitancia
     Y, Yrr, Y_r0, nodos, slack_index = matrices.calcular_matriz_admitancia(df_resultados)
     st.subheader("🔢 Matriz de Admitancia Y")
-    st.write(pd.DataFrame(Y))
+    st.write(pd.DataFrame(Y).round(4))
 
     # Voltajes
     V, df_voltajes = voltajes.calcular_voltajes_nodales(Yrr, Y_r0, slack_index, nodos, V0=240+0j)
     st.subheader("⚡ Voltajes nodales")
-    st.dataframe(df_voltajes)
+    st.dataframe(df_voltajes.round(2))
 
     # Generar PDF
     opcion = st.radio("📄 ¿Qué reporte deseas generar?", ["Corto", "Largo", "Ambos"])
     if st.button("Generar Reporte PDF"):
         if opcion == "Corto":
             ruta_pdf = generar_pdf_corto(ruta_excel)
+            nombre_pdf = os.path.basename(ruta_pdf)
             with open(ruta_pdf, "rb") as f:
-                st.download_button("⬇️ Descargar Informe Corto", f, file_name="Informe_Corto.pdf")
+                st.download_button("⬇️ Descargar Informe Corto", data=f, file_name=nombre_pdf, mime="application/pdf")
         elif opcion == "Largo":
             ruta_pdf = generar_pdf_largo(ruta_excel)
+            nombre_pdf = os.path.basename(ruta_pdf)
             with open(ruta_pdf, "rb") as f:
-                st.download_button("⬇️ Descargar Informe Largo", f, file_name="Informe_Largo.pdf")
+                st.download_button("⬇️ Descargar Informe Largo", data=f, file_name=nombre_pdf, mime="application/pdf")
         else:
             ruta_corto = generar_pdf_corto(ruta_excel)
+            nombre_corto = os.path.basename(ruta_corto)
             ruta_largo = generar_pdf_largo(ruta_excel)
+            nombre_largo = os.path.basename(ruta_largo)
             with open(ruta_corto, "rb") as f:
-                st.download_button("⬇️ Descargar Informe Corto", f, file_name="Informe_Corto.pdf")
+                st.download_button("⬇️ Descargar Informe Corto", data=f, file_name=nombre_corto, mime="application/pdf")
+            with open(ruta_largo, "rb") as f:
+                st.download_button("⬇️ Descargar Informe Largo", data=f, file_name=nombre_largo, mime="application/pdf")
+
             with open(ruta_largo, "rb") as f:
                 st.download_button("⬇️ Descargar Informe Largo", f, file_name="Informe_Largo.pdf")
+
 
