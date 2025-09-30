@@ -44,7 +44,7 @@ if archivo_excel is not None:
     # Ejecutar cálculos
     # Asegúrate de que realizar_calculos acepte estos argumentos
     df_resultados, potencia_total, factor_coinc = calculos.realizar_calculos(
-        df_conexiones, df_parametros, df_info
+    datos_cargados
     )
 
     st.subheader("📊 Resultados de Cálculo")
@@ -80,3 +80,4 @@ if archivo_excel is not None:
                 st.download_button("⬇️ Descargar Informe Corto", f, file_name="Informe_Corto.pdf")
             with open(ruta_largo, "rb") as f:
                 st.download_button("⬇️ Descargar Informe Largo", f, file_name="Informe_Largo.pdf")
+
