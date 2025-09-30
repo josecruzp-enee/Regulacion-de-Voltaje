@@ -1,13 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Sep 28 13:18:21 2025
-
-@author: José Nikol Cruz
-"""
-
-# -*- coding: utf-8 -*-
-"""
-app_streamlit.py
+app.py
 Interfaz Streamlit para análisis de red secundaria
 """
 
@@ -30,16 +23,28 @@ if archivo_excel is not None:
     with open(ruta_excel, "wb") as f:
         f.write(archivo_excel.getbuffer())
 
-    # Cargar datos
-    df_conexiones, df_parametros, df_info, *_ = datos.cargar_datos_circuito(ruta_excel)
+    # Cargar datos (diccionario)
+    datos_cargados = datos.cargar_datos_circuito(ruta_excel)
+    df_conexiones = datos_cargados.get("df_conexiones")
+    df_parametros = datos_cargados.get("df_parametros")
+    df_info = datos_cargados.get("df_info")
 
     st.subheader("📑 Información del Proyecto")
-    st.dataframe(df_info)
-    st.dataframe(df_parametros)
+    if isinstance(df_info, pd.DataFrame):
+        st.dataframe(df_info)
+    else:
+        st.write("df_info no es un DataFrame, contiene:", df_info)
+
+    st.subheader("📑 Parámetros del Proyecto")
+    if isinstance(df_parametros, pd.DataFrame):
+        st.dataframe(df_parametros)
+    else:
+        st.write("df_parametros no es un DataFrame, contiene:", df_parametros)
 
     # Ejecutar cálculos
+    # Asegúrate de que realizar_calculos acepte estos argumentos
     df_resultados, potencia_total, factor_coinc = calculos.realizar_calculos(
-        (df_conexiones, df_parametros, df_info)
+        df_conexiones, df_parametros, df_info
     )
 
     st.subheader("📊 Resultados de Cálculo")
