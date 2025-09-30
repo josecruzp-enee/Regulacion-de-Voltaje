@@ -4,11 +4,7 @@ matplotlib
 sympy
 streamlit
 colorama
-fpdf
 reportlab
-seaborn
-networkx
 openpyxl
 Pillow
-
 
