@@ -58,7 +58,7 @@ def extraer_submatrices(Y, nodos):
     indices_no_slack = [i for i in range(len(nodos)) if i != slack_index]
 
     Yrr = Y[np.ix_(indices_no_slack, indices_no_slack)]
-    Y_r0 = Y[indices_no_slack, slack_index].reshape(-1, 1)
+    Y_r0 = Y[indices_no_slack, slack_index]
 
     return Yrr, Y_r0, nodo_slack, slack_index
 
@@ -72,3 +72,4 @@ def calcular_matriz_admitancia(df):
     Y = construir_matriz_admitancia(df, nodos, indice_nodos)
     Yrr, Y_r0, nodo_slack, slack_index = extraer_submatrices(Y, nodos)
     return Y, Yrr, Y_r0, nodos, slack_index
+
