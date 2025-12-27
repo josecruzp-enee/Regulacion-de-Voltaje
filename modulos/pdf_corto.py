@@ -142,7 +142,7 @@ def generar_pdf_corto(ruta_excel, ruta_salida=None):
 
     try:
         registro_transformador = datos["df_info"].loc[
-            datos["df_info"]["info"] == "Registro del Transformador", "Valor"
+            datos["df_info"]["info"] == "Registro", "Valor"
         ].values[0]
         registro_transformador = str(registro_transformador).strip()
     except Exception:
@@ -285,3 +285,4 @@ def obtener_datos_para_pdf_corto(ruta_excel):
 if __name__ == "__main__":
     ruta_excel = os.path.join(os.path.dirname(__file__), "datos_red_secundaria.xlsx")
     generar_pdf_corto(ruta_excel)
+
