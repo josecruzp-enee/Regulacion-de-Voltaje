@@ -7,7 +7,7 @@ Orquestador: centraliza cálculos eléctricos
 from .cargas import calcular_potencia_carga
 from .lineas import (
     resistencia_por_vano,
-    reactancia_por_vano_geometrica,
+    reactancia_por_vano,
     calcular_impedancia,
     calcular_admitancia,
 )
@@ -32,3 +32,4 @@ def realizar_calculos(datos_cargados: dict):
         df_conexiones, area_lote, tipo_conductor
     )
     return df_resultados, potencia_total_kva, factor_coinc
+
