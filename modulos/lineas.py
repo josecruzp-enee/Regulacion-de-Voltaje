@@ -10,7 +10,7 @@ MODO RV-2002 (TABULADO):
 """
 
 import numpy as np
-from modulos.conductores import biblioteca_conductores
+from .datos import biblioteca_conductores
 CONDUCTORES = biblioteca_conductores()
 
 
@@ -39,4 +39,5 @@ def calcular_admitancia(z):
     if abs(z) < 1e-12:
         return 0 + 0j
     return 1 / z
+
 
