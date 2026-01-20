@@ -10,31 +10,23 @@ MODO RV-2002 (TABULADO):
 """
 
 import numpy as np
+from modulos.conductores import biblioteca_conductores
+CONDUCTORES = biblioteca_conductores()
 
 
-def resistencia_por_vano(conductores, tipo_conductor, distancia_metros):
-    """
-    R_vano = 2 * R(Ω/km) * L(km)
-    """
+def resistencia_por_vano(conductores, tipo_conductor, distancia_m):
     if tipo_conductor not in conductores:
         raise ValueError(f"Conductor '{tipo_conductor}' no está en el diccionario.")
-    distancia_km = distancia_metros / 1000.0
-    return 2.0 * float(conductores[tipo_conductor]["R"]) * distancia_km
+    L_km = float(distancia_m) / 1000.0
+    return 2.0 * float(conductores[tipo_conductor]["R"]) * L_km
 
 
-def reactancia_por_vano_geometrica(conductores, tipo_conductor, distancia_metros, separacion_fases_metros=None, radio_conductor_metros=None, frecuencia=60):
-    """
-    COMPATIBILIDAD (MODO RV):
-    Se mantiene el nombre, pero se ignora geometría y se usa X tabulada.
-
-    X_vano = 2 * X(Ω/km) * L(km)
-    """
+def reactancia_por_vano(conductores, tipo_conductor, distancia_m):
     if tipo_conductor not in conductores:
         raise ValueError(f"Conductor '{tipo_conductor}' no está en el diccionario.")
-    if "X" not in conductores[tipo_conductor]:
-        raise ValueError(f"Conductor '{tipo_conductor}' no tiene 'X' en el diccionario.")
-    distancia_km = distancia_metros / 1000.0
-    return 2.0 * float(conductores[tipo_conductor]["X"]) * distancia_km
+    L_km = float(distancia_m) / 1000.0
+    return 2.0 * float(conductores[tipo_conductor]["X"]) * L_km
+
 
 
 def calcular_impedancia(row):
@@ -47,3 +39,4 @@ def calcular_admitancia(z):
     if abs(z) < 1e-12:
         return 0 + 0j
     return 1 / z
+
