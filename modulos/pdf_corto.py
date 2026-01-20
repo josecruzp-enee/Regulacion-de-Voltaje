@@ -23,7 +23,7 @@ from modulos.secciones_pdf import crear_grafico_voltajes_pdf
 from modulos.demanda import proyectar_demanda, crear_grafico_demanda
 from modulos.graficos_red import crear_grafico_nodos
 from modulos.datos import cargar_datos_circuito, biblioteca_conductores
-from modulos.lineas import resistencia_por_vano, calcular_impedancia, reactancia_por_vano_geometrica, calcular_admitancia
+from modulos.lineas import resistencia_por_vano, reactancia_por_vano, calcular_impedancia, calcular_admitancia
 from modulos.cargas import calcular_potencia_carga
 from modulos.matrices import calcular_matriz_admitancia
 from modulos.voltajes import calcular_voltajes_nodales, calcular_regulacion_voltaje, preparar_df_voltajes
@@ -221,13 +221,16 @@ def obtener_datos_para_pdf_corto(ruta_excel):
     df_conexiones = datos["df_conexiones"]
     tipo_conductor = datos["tipo_conductor"]
 
-    conductores = biblioteca_conductores()
-    df_conexiones["resistencia_vano"] = df_conexiones.apply(
-        lambda row: resistencia_por_vano(conductores, tipo_conductor, row["distancia"]), axis=1
+    tipo_conductor = str(tipo_conductor).strip()
+
+    df_conexiones["resistencia_vano"] = df_conexiones["distancia"].apply(
+        lambda d: resistencia_por_vano(conductores, tipo_conductor, d)
     )
-    df_conexiones["reactancia_vano"] = df_conexiones.apply(
-        lambda row: reactancia_por_vano_geometrica(row["distancia"], 0.2032, 0.00735), axis=1
+
+    df_conexiones["reactancia_vano"] = df_conexiones["distancia"].apply(
+        lambda d: reactancia_por_vano(conductores, tipo_conductor, d)
     )
+    
     df_conexiones["Z_vano"] = df_conexiones.apply(calcular_impedancia, axis=1)
     df_conexiones["Y_vano"] = df_conexiones["Z_vano"].apply(calcular_admitancia)
 
@@ -285,4 +288,5 @@ def obtener_datos_para_pdf_corto(ruta_excel):
 if __name__ == "__main__":
     ruta_excel = os.path.join(os.path.dirname(__file__), "datos_red_secundaria.xlsx")
     generar_pdf_corto(ruta_excel)
+
 
