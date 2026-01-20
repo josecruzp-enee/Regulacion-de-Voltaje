@@ -16,6 +16,7 @@ from .datos import calcular_kva_por_area, factor_coincidencia, biblioteca_conduc
 from .lineas import resistencia_por_vano, reactancia_por_vano, calcular_impedancia, calcular_admitancia
 
 
+
 def calcular_potencias(df_conexiones, kva_usuario, factor_coinc, fp=0.9):
     df = df_conexiones.copy()
     df['kva'] = df['usuarios'] * kva_usuario * factor_coinc
@@ -71,8 +72,8 @@ def calcular_potencia_carga(tabla_potencia, area_m2, tipo_conductor, fp=0.9, V_n
     tabla_potencia['resistencia_vano'] = tabla_potencia.apply(
         lambda row: resistencia_por_vano(conductores, tipo_conductor, row['distancia']), axis=1
     )
-    tabla_potencia['reactancia_vano'] = tabla_potencia.apply(
-        lambda row: reactancia_por_vano_geometrica(conductores, tipo_conductor, row['distancia']), axis=1    
+    tabla_potencia['reactancia_vano'] = tabla_potencia['distancia'].apply(
+        lambda d: reactancia_por_vano(conductores, tipo_conductor, d)
     )
     
     tabla_potencia['Z_vano'] = tabla_potencia.apply(calcular_impedancia, axis=1)
@@ -81,5 +82,6 @@ def calcular_potencia_carga(tabla_potencia, area_m2, tipo_conductor, fp=0.9, V_n
 
     potencia_total_kva = float(tabla_potencia['kva_total'].sum())
     return tabla_potencia, potencia_total_kva, factor_coinc
+
 
 
