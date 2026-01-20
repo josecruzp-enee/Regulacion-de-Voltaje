@@ -18,19 +18,39 @@ from typing import Dict, Any
 # Sección #1: Diccionario de conductores y parámetros
 # =====================================================
 
+from typing import Dict
+
 def biblioteca_conductores() -> Dict[str, Dict[str, float]]:
     """
-    Devuelve un diccionario con propiedades eléctricas de conductores.
-    Valores típicos según tablas de la ENEE.
+    Tabla RV-2002: Resistencias y reactancias en Ω/km (por conductor).
     """
     return {
-        '2':   {'R': 0.1563, 'X': 0.0800,  'radio_m': 0.00735},
-        '1/0': {'R': 0.1239, 'X': 0.0780,  'radio_m': 0.00825},
-        '2/0': {'R': 0.0983, 'X': 0.0750,  'radio_m': 0.00927},
-        '3/0': {'R': 0.3740, 'X': 0.29277, 'radio_m': 0.01040},
-        '4/0': {'R': 0.0618, 'X': 0.0710,  'radio_m': 0.01168},
-        '266': {'R': 0.0590, 'X': 0.0700,  'radio_m': 0.01290},
+        # AWG
+        "6":   {"R": 2.4343,   "X": 0.36300},
+        "4":   {"R": 1.5972,   "X": 0.34554},
+        "2":   {"R": 0.9449,   "X": 0.32790},
+        "1":   {"R": 0.867925, "X": 0.31918},
+
+        # AWG 0
+        "1/0": {"R": 0.5971,   "X": 0.310345},
+        "2/0": {"R": 0.4725,   "X": 0.30150},
+        "3/0": {"R": 0.3740,   "X": 0.29277},
+        "4/0": {"R": 0.2953,   "X": 0.28395},
+
+        # kcmil
+        "266.8": {"R": 0.2362, "X": 0.27515},
+        "336.4": {"R": 0.1902, "X": 0.26220},
+        "397.5": {"R": 0.1610, "X": 0.25540},
+        "477":   {"R": 0.1349, "X": 0.24900},
+        "556.5": {"R": 0.1156, "X": 0.24290},
+        "636":   {"R": 0.1019, "X": 0.23670},
+        "715.5": {"R": 0.0907, "X": 0.23247},
+        "795.5": {"R": 0.0814, "X": 0.22866},
+
+        # compatibilidad por si tu app usa "266"
+        "266":   {"R": 0.2362, "X": 0.27515},
     }
+
 
 
 # =====================================================
@@ -179,5 +199,6 @@ def cargar_datos_circuito(archivo: str = "datos_red_secundaria.xlsx") -> Dict[st
         "usuarios_especiales": conexiones["usuarios_especiales"],
         "areas_especiales": conexiones["areas_especiales"],
     }
+
 
 
