@@ -71,11 +71,13 @@ def calcular_potencia_carga(tabla_potencia, area_m2, tipo_conductor, fp=0.9, V_n
         lambda row: resistencia_por_vano(conductores, tipo_conductor, row['distancia']), axis=1
     )
     tabla_potencia['reactancia_vano'] = tabla_potencia.apply(
-        lambda row: reactancia_por_vano_geometrica(row['distancia'], 0.2032, conductores[tipo_conductor]['radio_m']), axis=1
+        lambda row: reactancia_por_vano_geometrica(conductores, tipo_conductor, row['distancia']), axis=1    
     )
+    
     tabla_potencia['Z_vano'] = tabla_potencia.apply(calcular_impedancia, axis=1)
     tabla_potencia['Y_vano'] = tabla_potencia['Z_vano'].apply(calcular_admitancia)
     tabla_potencia['kva'] = tabla_potencia['kva_total']
 
     potencia_total_kva = float(tabla_potencia['kva_total'].sum())
     return tabla_potencia, potencia_total_kva, factor_coinc
+
