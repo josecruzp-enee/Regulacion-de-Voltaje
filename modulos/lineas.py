@@ -18,14 +18,14 @@ def resistencia_por_vano(conductores, tipo_conductor, distancia_m):
     if tipo_conductor not in conductores:
         raise ValueError(f"Conductor '{tipo_conductor}' no está en el diccionario.")
     L_km = float(distancia_m) / 1000.0
-    return 2.0 * float(conductores[tipo_conductor]["R"]) * L_km
+    return float(conductores[tipo_conductor]["R"]) * L_km
 
 
 def reactancia_por_vano(conductores, tipo_conductor, distancia_m):
     if tipo_conductor not in conductores:
         raise ValueError(f"Conductor '{tipo_conductor}' no está en el diccionario.")
     L_km = float(distancia_m) / 1000.0
-    return 2.0 * float(conductores[tipo_conductor]["X"]) * L_km
+    return float(conductores[tipo_conductor]["X"]) * L_km
 
 
 
@@ -39,5 +39,6 @@ def calcular_admitancia(z):
     if abs(z) < 1e-12:
         return 0 + 0j
     return 1 / z
+
 
 
