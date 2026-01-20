@@ -222,7 +222,7 @@ def obtener_datos_para_pdf_corto(ruta_excel):
     tipo_conductor = datos["tipo_conductor"]
 
     tipo_conductor = str(tipo_conductor).strip()
-
+    conductores = biblioteca_conductores()
     df_conexiones["resistencia_vano"] = df_conexiones["distancia"].apply(
         lambda d: resistencia_por_vano(conductores, tipo_conductor, d)
     )
@@ -288,5 +288,6 @@ def obtener_datos_para_pdf_corto(ruta_excel):
 if __name__ == "__main__":
     ruta_excel = os.path.join(os.path.dirname(__file__), "datos_red_secundaria.xlsx")
     generar_pdf_corto(ruta_excel)
+
 
 
