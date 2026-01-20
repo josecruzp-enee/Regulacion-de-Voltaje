@@ -27,7 +27,7 @@ def biblioteca_conductores() -> Dict[str, Dict[str, float]]:
         '2':   {'R': 0.1563, 'X': 0.0800,  'radio_m': 0.00735},
         '1/0': {'R': 0.1239, 'X': 0.0780,  'radio_m': 0.00825},
         '2/0': {'R': 0.0983, 'X': 0.0750,  'radio_m': 0.00927},
-        '3/0': {'R': 0.374, 'X': 0.0730,  'radio_m': 0.01040},
+        '3/0': {'R': 0.3740, 'X': 0.29277, 'radio_m': 0.01040},
         '4/0': {'R': 0.0618, 'X': 0.0710,  'radio_m': 0.01168},
         '266': {'R': 0.0590, 'X': 0.0700,  'radio_m': 0.01290},
     }
@@ -179,4 +179,5 @@ def cargar_datos_circuito(archivo: str = "datos_red_secundaria.xlsx") -> Dict[st
         "usuarios_especiales": conexiones["usuarios_especiales"],
         "areas_especiales": conexiones["areas_especiales"],
     }
+
 
