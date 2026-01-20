@@ -23,7 +23,8 @@ from reportlab.lib.utils import ImageReader
 
 # ===================== IMPORTS DE MÓDULOS =====================
 from modulos.datos import cargar_datos_circuito, biblioteca_conductores
-from modulos.lineas import resistencia_por_vano, calcular_impedancia, reactancia_por_vano_geometrica, calcular_admitancia
+from modulos.lineas import resistencia_por_vano, reactancia_por_vano, calcular_impedancia, calcular_admitancia
+
 from modulos.cargas import calcular_potencia_carga
 from modulos.constantes import definir_constantes
 from modulos.matrices import calcular_matriz_admitancia
@@ -236,8 +237,8 @@ def generar_pdf_largo(ruta_excel):
     df_conexiones["resistencia_vano"] = df_conexiones.apply(
         lambda row: resistencia_por_vano(conductores, tipo_conductor, row["distancia"]), axis=1
     )
-    df_conexiones["reactancia_vano"] = df_conexiones.apply(
-        lambda row: reactancia_por_vano_geometrica(row["distancia"], 0.2032, 0.00735), axis=1
+    df_conexiones["reactancia_vano"] = df_conexiones["distancia"].apply(
+        lambda d: reactancia_por_vano(conductores, tipo_conductor, d)
     )
     df_conexiones["Z_vano"] = df_conexiones.apply(calcular_impedancia, axis=1)
     df_conexiones["Y_vano"] = df_conexiones["Z_vano"].apply(calcular_admitancia)
@@ -266,3 +267,4 @@ def generar_pdf_largo(ruta_excel):
         capacidad_transformador, df_proyeccion,
         perdida_total, nodos_inicio, nodos_final, usuarios, distancias
     )
+
