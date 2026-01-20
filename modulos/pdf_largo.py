@@ -234,8 +234,8 @@ def generar_pdf_largo(ruta_excel):
     nodos_final = datos["nodos_final"]
 
     conductores = biblioteca_conductores()
-    df_conexiones["resistencia_vano"] = df_conexiones.apply(
-        lambda row: resistencia_por_vano(conductores, tipo_conductor, row["distancia"]), axis=1
+    ddf_conexiones["resistencia_vano"] = df_conexiones["distancia"].apply(
+        lambda d: resistencia_por_vano(conductores, tipo_conductor, d)
     )
     df_conexiones["reactancia_vano"] = df_conexiones["distancia"].apply(
         lambda d: reactancia_por_vano(conductores, tipo_conductor, d)
@@ -267,4 +267,5 @@ def generar_pdf_largo(ruta_excel):
         capacidad_transformador, df_proyeccion,
         perdida_total, nodos_inicio, nodos_final, usuarios, distancias
     )
+
 
