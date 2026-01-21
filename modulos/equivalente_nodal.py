@@ -15,7 +15,7 @@ Objetivo:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Any, Tuple
 
 import numpy as np
 import pandas as pd
@@ -29,10 +29,6 @@ def fmt_c(z: complex, nd: int = 4) -> str:
     a = float(np.real(z))
     b = float(np.imag(z))
     return f"{a:.{nd}f} {b:+.{nd}f}j"
-
-
-def safe_div(a, b):
-    return a / b if (b is not None and b != 0 and not np.isnan(b)) else np.nan
 
 
 def matriz_a_df(
@@ -59,10 +55,12 @@ def matriz_a_df(
         nota = None
 
     df = pd.DataFrame(
-        [[fmt_c(Y_show[i, j], nd=nd) for j in range(len(nodos_show))] for i in range(len(nodos_show))],
+        [[fmt_c(Y_show[i, j], nd=nd) for j in range(len(nodos_show))]
+         for i in range(len(nodos_show))],
         columns=[str(x) for x in nodos_show],
         index=[str(x) for x in nodos_show],
     ).reset_index().rename(columns={"index": "Nodo"})
+
     return df, nota
 
 
@@ -118,43 +116,44 @@ def construir_equivalente_nodal(
 
     # ---- matrices
     df_Y, nota_Y = matriz_a_df(Y, nodos, nd=nd, max_n=max_n, titulo="Y")
+
     nodos_r = [nodos[i] for i in range(len(nodos)) if i != slack_index]
     df_Yrr, nota_Yrr = matriz_a_df(Yrr, nodos_r, nd=nd, max_n=max_n, titulo="Yrr")
 
-    # ---- vector Y_r0
+    # ---- vector Y_r0 (lo normalizamos a columna (n-1, 1))
     Yr0 = np.asarray(Y_r0)
+
     if Yr0.ndim == 1:
-    # (n-1,)
-      Yr0_col = Yr0.reshape(-1, 1)
+        # (n-1,)
+        Yr0_col = Yr0.reshape(-1, 1)
+
     elif Yr0.ndim == 2:
-    # (n-1,1) o (1,n-1)
+        # (n-1,1) o (1,n-1)
         if Yr0.shape[1] == 1:
-        Yr0_col = Yr0
-    elif Yr0.shape[0] == 1:
-        Yr0_col = Yr0.T
+            Yr0_col = Yr0
+        elif Yr0.shape[0] == 1:
+            Yr0_col = Yr0.T
+        else:
+            raise ValueError(f"Y_r0 tiene forma inesperada: {Yr0.shape}")
+
     else:
-        # caso raro: matriz no vector
-        raise ValueError(f"Y_r0 tiene forma inesperada: {Yr0.shape}")
-else:
-    raise ValueError(f"Y_r0 tiene ndim inesperado: {Yr0.ndim}")
+        raise ValueError(f"Y_r0 tiene ndim inesperado: {Yr0.ndim}")
 
-# Seguridad: tamaño debe coincidir con nodos_r
-if Yr0_col.shape[0] != len(nodos_r):
-    raise ValueError(
-        f"Tamaño de Y_r0 ({Yr0_col.shape[0]}) no coincide con nodos sin slack ({len(nodos_r)}). "
-        f"Forma original Y_r0: {np.asarray(Y_r0).shape}"
-    )
+    # Seguridad: tamaño debe coincidir con nodos_r
+    if Yr0_col.shape[0] != len(nodos_r):
+        raise ValueError(
+            f"Tamaño de Y_r0 ({Yr0_col.shape[0]}) no coincide con nodos sin slack ({len(nodos_r)}). "
+            f"Forma original Y_r0: {np.asarray(Y_r0).shape}"
+        )
 
-df_Yr0 = pd.DataFrame({
-    "Nodo": [str(n) for n in nodos_r],
-    "Y_r0 (S)": [fmt_c(Yr0_col[i, 0], nd=nd) for i in range(Yr0_col.shape[0])]
-})
+    df_Yr0 = pd.DataFrame({
+        "Nodo": [str(n) for n in nodos_r],
+        "Y_r0 (S)": [fmt_c(Yr0_col[i, 0], nd=nd) for i in range(Yr0_col.shape[0])]
+    })
 
     # ---- tabla de ramas (circuito con R y X)
-    # Usamos la info ya existente en df_conexiones: Ni, Nf, Dist, r, x, Z, Y
     df = df_conexiones.copy()
 
-    # Asegurar columnas
     for c in (col_ni, col_nf, col_dist, col_r, col_x):
         if c not in df.columns:
             raise ValueError(f"Falta columna requerida en df_conexiones: '{c}'")
@@ -165,6 +164,7 @@ df_Yr0 = pd.DataFrame({
             lambda row: 0j if float(row[col_dist]) == 0 else complex(float(row[col_r]), float(row[col_x])),
             axis=1
         )
+
     if col_y not in df.columns:
         df[col_y] = df[col_z].apply(lambda z: 0j if abs(z) < 1e-12 else 1 / z)
 
@@ -179,7 +179,7 @@ df_Yr0 = pd.DataFrame({
         col_y: "Y (S)"
     })
 
-    # Formato
+    # Formato (como strings para PDF)
     df_ramas["Dist (m)"] = df_ramas["Dist (m)"].map(lambda v: f"{float(v):.0f}")
     df_ramas["r (Ω)"] = df_ramas["r (Ω)"].map(lambda v: f"{float(v):.6f}")
     df_ramas["x (Ω)"] = df_ramas["x (Ω)"].map(lambda v: f"{float(v):.6f}")
