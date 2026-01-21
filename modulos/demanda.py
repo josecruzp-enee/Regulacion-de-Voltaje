@@ -61,6 +61,16 @@ def proyectar_demanda(potencia_total_kva, df_parametros, df_proyeccion,
 
     return df_proyeccion
 
+def proyectar_regulacion_rv(df_proyeccion, *, reg_base_pct: float, kva_base: float,
+                            col_kva: str = "Demanda (kVA)", col_out: str = "% Reg."):
+
+    kva_base = float(kva_base) if float(kva_base) != 0 else 1.0
+    reg_base_pct = float(reg_base_pct)
+
+    df_proyeccion[col_out] = df_proyeccion[col_kva].astype(float).apply(
+        lambda kva: reg_base_pct * (kva / kva_base)
+    )
+    return df_proyeccion
 
 # =====================================================
 # Función: gráfico de demanda proyectada
@@ -91,3 +101,4 @@ def crear_grafico_demanda(df_proyeccion):
     buf.seek(0)
 
     return Image(buf)
+
