@@ -1,9 +1,11 @@
-
-# ===================== IMPORTS DE MÓDULOS =====================
 # -*- coding: utf-8 -*-
 """
 pdf_largo.py
-Generación de informe largo en PDF para análisis de red secundaria
+Generación de informe largo en PDF para análisis de red secundaria.
+
+Refactor:
+- Añade columnas r/x por conductor (1c) para reporte sin romper cálculo (lazo).
+- Añade sección "Circuito equivalente nodal (Nivel 2)" usando modulos.equivalente_nodal
 """
 
 import os
@@ -24,7 +26,6 @@ from reportlab.lib.utils import ImageReader
 # ===================== IMPORTS DE MÓDULOS =====================
 from modulos.datos import cargar_datos_circuito, biblioteca_conductores
 from modulos.lineas import resistencia_por_vano, reactancia_por_vano, calcular_impedancia, calcular_admitancia
-
 from modulos.cargas import calcular_potencia_carga
 from modulos.constantes import definir_constantes
 from modulos.matrices import calcular_matriz_admitancia
@@ -37,7 +38,20 @@ from modulos.graficos_red import crear_grafico_nodos
 from modulos.datos_pdf import generar_comentario_cargabilidad
 from modulos.datos import factor_coincidencia
 
-# === Estilos y utilidades ===
+# NUEVO: equivalente nodal
+from modulos.equivalente_nodal import construir_equivalente_nodal
+
+
+# ============================================================
+# CONFIG (ajusta si tus columnas se llaman diferente)
+# ============================================================
+COL_NI = "nodo_inicio"
+COL_NF = "nodo_final"
+
+
+# ============================================================
+# Estilos y utilidades
+# ============================================================
 def encabezado(canvas, doc):
     canvas.saveState()
     ancho_pagina = doc.pagesize[0]
@@ -47,6 +61,7 @@ def encabezado(canvas, doc):
     canvas.drawCentredString(ancho_pagina / 2, y - 18, "Análisis de Red Secundaria de Distribución")
     canvas.restoreState()
 
+
 def aplicar_fondo(cnv, doc, ruta_imagen_fondo):
     try:
         ancho, alto = doc.pagesize
@@ -55,10 +70,12 @@ def aplicar_fondo(cnv, doc, ruta_imagen_fondo):
     except Exception as e:
         print(f"Error al aplicar fondo: {e}")
 
+
 def fondo_y_encabezado(cnv, doc):
     ruta_imagen_fondo = os.path.join(os.path.dirname(__file__), "Imagen Encabezado.jpg")
     aplicar_fondo(cnv, doc, ruta_imagen_fondo)
     encabezado(cnv, doc)
+
 
 def crear_titulo(texto, tamano=16):
     estilo = ParagraphStyle(
@@ -68,6 +85,7 @@ def crear_titulo(texto, tamano=16):
     )
     return Paragraph(texto, estilo)
 
+
 def crear_subtitulo(texto, tamano=14):
     estilo = ParagraphStyle(
         name='Subtitulo', fontSize=tamano, leading=tamano+4,
@@ -76,19 +94,22 @@ def crear_subtitulo(texto, tamano=14):
     )
     return Paragraph(texto, estilo)
 
+
 def crear_tabla(df, encabezados=None, alineacion='CENTER'):
     data = [encabezados] + df.values.tolist() if encabezados else [df.columns.to_list()] + df.values.tolist()
     tabla = Table(data, hAlign=alineacion)
     tabla.setStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#d3d3d3")),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('ALIGN', (0,0), (-1,-1), alineacion),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#d3d3d3")),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('ALIGN', (0, 0), (-1, -1), alineacion),
     ])
     return tabla
 
 
-# === Secciones PDF ===
+# ============================================================
+# Secciones PDF existentes
+# ============================================================
 def seccion_info_proyecto_render(df_info):
     return [
         Spacer(1, 6),
@@ -98,6 +119,7 @@ def seccion_info_proyecto_render(df_info):
         crear_tabla(df_info, encabezados=['Parámetro', 'Valor']),
         Spacer(1, 12),
     ]
+
 
 def seccion_parametros_render(df_parametros, factor_coinc, potencia_total_kva):
     df_parametros_ext = df_parametros.copy()
@@ -110,38 +132,31 @@ def seccion_parametros_render(df_parametros, factor_coinc, potencia_total_kva):
         Spacer(1, 12),
     ]
 
+
 def seccion_proyeccion_render(df_proyeccion):
     elementos = [crear_subtitulo("5. Proyección de Demanda y Pérdidas Eléctricas Anuales")]
 
-    # Columnas básicas siempre presentes
     cols = ['Año', 'Demanda (kVA)', '% Carga (%)']
 
-    # Manejar pérdidas según lo que exista
     if 'Pérdidas (kWh) (fmt)' in df_proyeccion.columns:
         cols.append('Pérdidas (kWh) (fmt)')
     elif 'Pérdidas (kWh)' in df_proyeccion.columns:
         cols.append('Pérdidas (kWh)')
 
-    # Si no existe ninguna columna de pérdidas, no pasa nada
     df_reporte = df_proyeccion[cols].copy()
 
-    # Asegurar formato de % Carga si es numérico
     if pd.api.types.is_numeric_dtype(df_reporte['% Carga (%)']):
         df_reporte['% Carga (%)'] = df_reporte['% Carga (%)'].map(lambda x: f"{x:.2f}%")
 
-    # Insertar tabla
     elementos.append(crear_tabla(df_reporte, encabezados=df_reporte.columns.tolist()))
     elementos.append(Spacer(1, 12))
 
-    # Insertar gráfico
-    serie_demanda = df_proyeccion.get("Demanda_kva")
     img_demanda = crear_grafico_demanda(df_proyeccion)
     img_demanda.drawWidth = 5 * inch
     img_demanda.drawHeight = 3 * inch
     elementos.append(img_demanda)
     elementos.append(Spacer(1, 12))
 
-    # Comentario de cargabilidad
     texto, color = generar_comentario_cargabilidad(df_proyeccion)
     estilo = ParagraphStyle(name="ComentarioCargabilidad", fontSize=13, leading=16, alignment=TA_LEFT, textColor=color)
     elementos.append(Paragraph(texto, estilo))
@@ -164,23 +179,80 @@ def seccion_corrientes_render(df_conexiones, perdida_total):
         crear_subtitulo("6. Corrientes en tramos de red"),
         tabla,
         Spacer(1, 12),
-        Paragraph(f"Pérdida total estimada en la red: {perdida_total:,.2f} kWh/año",
-                  ParagraphStyle(name="ComentarioPerdidas", fontSize=12, leading=14, alignment=TA_LEFT)),
+        Paragraph(
+            f"Pérdida total estimada en la red: {perdida_total:,.2f} kWh/año",
+            ParagraphStyle(name="ComentarioPerdidas", fontSize=12, leading=14, alignment=TA_LEFT)
+        ),
     ]
     if comentario:
         elementos.append(Paragraph(comentario, ParagraphStyle(
-            name="ComentarioCorriente", fontSize=12, leading=14, alignment=TA_LEFT, textColor=colors.blue)))
+            name="ComentarioCorriente", fontSize=12, leading=14, alignment=TA_LEFT,
+            textColor=colors.blue
+        )))
     elementos.append(Spacer(1, 12))
     return elementos
 
 
-# === Funciones principales ===
-def generar_informe_pdf(df_info, df_parametros, factor_coinc, potencia_total_kva,
-                        df_conexiones, df_voltajes, df_regulacion,
-                        capacidad_transformador, df_proyeccion,
-                        perdida_total, nodos_inicio, nodos_final, usuarios, distancias,
-                        ruta_salida=None):
+# ============================================================
+# NUEVA sección: Equivalente nodal nivel 2
+# ============================================================
+def seccion_equivalente_nodal_render(eq):
+    elementos = []
+    elementos.append(crear_subtitulo("7. Circuito equivalente nodal (Nivel 2)"))
 
+    elementos.append(Paragraph(
+        f"Nodo slack: {eq.slack_nodo} (índice {eq.slack_index})",
+        ParagraphStyle(name="SlackEq", fontSize=11, leading=13, alignment=TA_LEFT)
+    ))
+    elementos.append(Spacer(1, 6))
+
+    elementos.append(crear_subtitulo("7.1 Mapa Nodo → Índice"))
+    elementos.append(crear_tabla(eq.df_mapa, encabezados=eq.df_mapa.columns.tolist()))
+    elementos.append(Spacer(1, 12))
+
+    elementos.append(crear_subtitulo("7.2 Ramas del circuito (R, X, Z, Y)"))
+    elementos.append(crear_tabla(eq.df_ramas, encabezados=eq.df_ramas.columns.tolist()))
+    elementos.append(Spacer(1, 12))
+
+    elementos.append(crear_subtitulo("7.3 Matriz Y (G + jB)"))
+    if eq.nota_Y:
+        elementos.append(Paragraph(eq.nota_Y, ParagraphStyle(
+            name="NotaRecorteY", fontSize=9, leading=11, alignment=TA_LEFT, textColor=colors.grey
+        )))
+    elementos.append(crear_tabla(eq.df_Y, encabezados=eq.df_Y.columns.tolist()))
+    elementos.append(Spacer(1, 12))
+
+    elementos.append(crear_subtitulo("7.4 Submatriz Yrr"))
+    if eq.nota_Yrr:
+        elementos.append(Paragraph(eq.nota_Yrr, ParagraphStyle(
+            name="NotaRecorteYrr", fontSize=9, leading=11, alignment=TA_LEFT, textColor=colors.grey
+        )))
+    elementos.append(crear_tabla(eq.df_Yrr, encabezados=eq.df_Yrr.columns.tolist()))
+    elementos.append(Spacer(1, 12))
+
+    elementos.append(crear_subtitulo("7.5 Vector Y_r0"))
+    elementos.append(crear_tabla(eq.df_Yr0, encabezados=eq.df_Yr0.columns.tolist()))
+    elementos.append(Spacer(1, 12))
+
+    elementos.append(Paragraph(
+        "Ecuación nodal reducida:  V_r = inv(Yrr) · (I_r − Y_r0·V0).",
+        ParagraphStyle(name="EqNodal", fontSize=10, leading=12, alignment=TA_LEFT, textColor=colors.grey)
+    ))
+    elementos.append(Spacer(1, 12))
+    return elementos
+
+
+# ============================================================
+# Función principal: construir PDF
+# ============================================================
+def generar_informe_pdf(
+    df_info, df_parametros, factor_coinc, potencia_total_kva,
+    df_conexiones, df_voltajes, df_regulacion,
+    capacidad_transformador, df_proyeccion,
+    perdida_total, nodos_inicio, nodos_final, usuarios, distancias,
+    eq=None,
+    ruta_salida=None
+):
     try:
         registro_transformador = df_info.loc[df_info["info"] == "Registro del Transformador", "Valor"].values[0]
         registro_transformador = str(registro_transformador).strip()
@@ -196,19 +268,25 @@ def generar_informe_pdf(df_info, df_parametros, factor_coinc, potencia_total_kva
     doc.addPageTemplates([template])
 
     elementos = []
+
+    # Secciones
     for seccion in [
         seccion_info_proyecto_render(df_info),
         seccion_parametros_render(df_parametros, factor_coinc, potencia_total_kva),
         seccion_usuarios_y_voltajes(df_conexiones, df_voltajes, df_regulacion, crear_tabla, crear_subtitulo),
         seccion_proyeccion_render(df_proyeccion),
         seccion_corrientes_render(df_conexiones, perdida_total),
+        seccion_equivalente_nodal_render(eq) if eq is not None else [],
     ]:
         elementos.extend(seccion)
 
-    grafico = crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias,
-                                  capacidad_transformador, df_conexiones)
-    grafico.drawWidth = 6*inch
-    grafico.drawHeight = 4.5*inch
+    # Gráfico red (ya existente)
+    grafico = crear_grafico_nodos(
+        nodos_inicio, nodos_final, usuarios, distancias,
+        capacidad_transformador, df_conexiones
+    )
+    grafico.drawWidth = 6 * inch
+    grafico.drawHeight = 4.5 * inch
     elementos.append(grafico)
 
     doc.build(elementos)
@@ -216,6 +294,9 @@ def generar_informe_pdf(df_info, df_parametros, factor_coinc, potencia_total_kva
     return ruta_salida
 
 
+# ============================================================
+# Wrapper: desde Excel
+# ============================================================
 def generar_pdf_largo(ruta_excel):
     ruta_excel = os.path.abspath(ruta_excel)
 
@@ -233,39 +314,63 @@ def generar_pdf_largo(ruta_excel):
     nodos_inicio = datos["nodos_inicio"]
     nodos_final = datos["nodos_final"]
 
+    # --- Impedancias de vano (cálculo)
     conductores = biblioteca_conductores()
-    ddf_conexiones["resistencia_vano"] = df_conexiones["distancia"].apply(
+
+    df_conexiones["resistencia_vano"] = df_conexiones["distancia"].apply(
         lambda d: resistencia_por_vano(conductores, tipo_conductor, d)
     )
     df_conexiones["reactancia_vano"] = df_conexiones["distancia"].apply(
         lambda d: reactancia_por_vano(conductores, tipo_conductor, d)
     )
+
+    # Para reporte (por conductor, sin romper cálculo)
+    df_conexiones["r_vano_1c"] = df_conexiones["resistencia_vano"] / 2.0
+    df_conexiones["x_vano_1c"] = df_conexiones["reactancia_vano"] / 2.0
+
     df_conexiones["Z_vano"] = df_conexiones.apply(calcular_impedancia, axis=1)
     df_conexiones["Y_vano"] = df_conexiones["Z_vano"].apply(calcular_admitancia)
 
+    # --- Cargas
     factor_coinc = factor_coincidencia(df_conexiones["usuarios"].sum())
     df_conexiones, potencia_total_kva, _ = calcular_potencia_carga(
         df_conexiones, area_lote, tipo_conductor
     )
 
+    # --- Matriz Y y voltajes
     Y, Yrr, Y_r0, nodos, slack_index = calcular_matriz_admitancia(df_conexiones)
     V, df_voltajes = calcular_voltajes_nodales(Yrr, Y_r0, slack_index, nodos, V0=240+0j)
     nodo_slack = nodos[slack_index]
 
+    # --- Corrientes y pérdidas
     df_conexiones = calcular_corrientes(df_conexiones, V)
     df_conexiones, perdida_total, proyeccion_perdidas = calcular_perdidas_y_proyeccion(df_conexiones)
 
+    # --- Proyección
     df_proyeccion = pd.DataFrame({'Año': range(0, 16)})
     df_proyeccion = proyectar_demanda(
         potencia_total_kva, df_parametros.set_index('Parámetro'), df_proyeccion,
         crecimiento=0.02, años=15, proyeccion_perdidas=proyeccion_perdidas
     )
 
-    return generar_informe_pdf(
-        df_info, df_parametros, factor_coinc, potencia_total_kva,
-        df_conexiones, df_voltajes, calcular_regulacion_voltaje(V, nodos=nodos, nodo_slack=nodo_slack),
-        capacidad_transformador, df_proyeccion,
-        perdida_total, nodos_inicio, nodos_final, usuarios, distancias
+    # --- Construir equivalente nodal nivel 2 (módulo)
+    eq = construir_equivalente_nodal(
+        df_conexiones,
+        nodos=nodos,
+        slack_index=slack_index,
+        Y=Y, Yrr=Yrr, Y_r0=Y_r0,
+        V0=240+0j,
+        col_ni=COL_NI,
+        col_nf=COL_NF,
     )
 
+    # --- Regulación
+    df_reg = calcular_regulacion_voltaje(V, nodos=nodos, nodo_slack=nodo_slack)
 
+    return generar_informe_pdf(
+        df_info, df_parametros, factor_coinc, potencia_total_kva,
+        df_conexiones, df_voltajes, df_reg,
+        capacidad_transformador, df_proyeccion,
+        perdida_total, nodos_inicio, nodos_final, usuarios, distancias,
+        eq=eq
+    )
