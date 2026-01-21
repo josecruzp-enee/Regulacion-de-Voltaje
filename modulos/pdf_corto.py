@@ -20,7 +20,12 @@ from reportlab.lib import colors
 # ==== Módulos propios ====
 from modulos.datos_pdf import preparar_info_proyecto, tabla_corrientes_vano
 from modulos.secciones_pdf import crear_grafico_voltajes_pdf
-from modulos.demanda import proyectar_demanda, crear_grafico_demanda
+from modulos.demanda import (
+    proyectar_demanda,
+    proyectar_regulacion_rv,
+    resumen_regulacion_y_demanda,
+    crear_grafico_demanda,
+)
 from modulos.graficos_red import crear_grafico_nodos
 from modulos.datos import cargar_datos_circuito, biblioteca_conductores
 from modulos.lineas import resistencia_por_vano, reactancia_por_vano, calcular_impedancia, calcular_admitancia
@@ -176,11 +181,23 @@ def generar_pdf_corto(ruta_excel, ruta_salida=None):
         elementos.append(crear_tabla_voltajes(df_voltajes_fmt, df_voltajes_fmt.columns.tolist(), "CENTER"))
         elementos.append(Spacer(1, 10))
 
+        # ====== NUEVO: Resumen corto de demanda + %Reg ======
+        elementos.append(crear_subtitulo("Resumen de Regulación y Demanda"))
+        elementos.append(crear_tabla(
+            datos["df_resumen_reg"],
+            datos["df_resumen_reg"].columns.tolist(),
+            "CENTER",
+            font_size=7
+        ))
+        elementos.append(Spacer(1, 8))
+
+        # ====== Tabla de proyección (incluye % Reg.) ======
         elementos.append(crear_subtitulo("Demanda Proyectada"))
         elementos.append(crear_tabla(
-            datos["df_proyeccion"][["Año", "Demanda (kVA)", "Pérdidas (kWh) (fmt)", "% Carga"]],
-            ["Año", "Demanda (kVA)", "Pérdidas (kWh)", "% Carga"],
-            "CENTER"
+            datos["df_proyeccion"][["Año", "Demanda (kVA)", "Pérdidas (kWh) (fmt)", "% Carga", "% Reg."]],
+            ["Año", "Demanda (kVA)", "Pérdidas (kWh)", "% Carga", "% Reg."],
+            "CENTER",
+            font_size=7
         ))
 
         if incluir_corrientes:
@@ -230,7 +247,7 @@ def obtener_datos_para_pdf_corto(ruta_excel):
     df_conexiones["reactancia_vano"] = df_conexiones["distancia"].apply(
         lambda d: reactancia_por_vano(conductores, tipo_conductor, d)
     )
-    
+
     df_conexiones["Z_vano"] = df_conexiones.apply(calcular_impedancia, axis=1)
     df_conexiones["Y_vano"] = df_conexiones["Z_vano"].apply(calcular_admitancia)
 
@@ -255,13 +272,44 @@ def obtener_datos_para_pdf_corto(ruta_excel):
         proyeccion_perdidas=proyeccion_perdidas
     )
 
+    # ===== Regulación base (peor nodo) =====
     df_regulacion = calcular_regulacion_voltaje(V, nodos=nodos, nodo_slack=nodo_slack)
 
-    df_corrientes, comentario_corrientes = tabla_corrientes_vano(df_conexiones, perdida_total, voltaje_slack=240)
+    col_reg = next((c for c in df_regulacion.columns if "regul" in c.lower()), None)
+    if col_reg is None:
+        raise ValueError(
+            f"No encontré columna de regulación en df_regulacion. Columnas: {list(df_regulacion.columns)}"
+        )
+
+    reg_base_pct = float(pd.to_numeric(df_regulacion[col_reg], errors="coerce").max())
+
+    # ===== Proyectar %Reg estilo RV usando "Demanda (kVA)" con comas =====
+    df_proyeccion = proyectar_regulacion_rv(
+        df_proyeccion,
+        reg_base_pct=reg_base_pct,
+        kva_base=None,              # toma kVA_base del año 0 desde "Demanda (kVA)"
+        col_kva="Demanda (kVA)",
+        col_out="% Reg.",
+        col_out_num="Reg_pct"
+    )
+
+    # ===== Resumen corto para PDF corto =====
+    df_resumen_reg = resumen_regulacion_y_demanda(
+        df_proyeccion,
+        años_objetivo=15,
+        reg_base_pct=reg_base_pct
+    )
+
+    # ===== Corrientes por vano =====
+    df_corrientes, comentario_corrientes = tabla_corrientes_vano(
+        df_conexiones, perdida_total, voltaje_slack=240
+    )
     elementos_corrientes = [
         crear_tabla(df_corrientes[["Tramo", "|I| (A)"]], ["Tramo", "|I| (A)"], "CENTER"),
-        Paragraph(comentario_corrientes or "⚠️ No se generó comentario de corrientes.",
-                  ParagraphStyle(name="ComentarioCorrientes", fontSize=10, alignment=TA_CENTER))
+        Paragraph(
+            comentario_corrientes or "⚠️ No se generó comentario de corrientes.",
+            ParagraphStyle(name="ComentarioCorrientes", fontSize=10, alignment=TA_CENTER)
+        )
     ]
 
     return {
@@ -271,6 +319,8 @@ def obtener_datos_para_pdf_corto(ruta_excel):
         "proyeccion_perdidas": proyeccion_perdidas,
         "df_voltajes": df_voltajes,
         "df_regulacion": df_regulacion,
+        "reg_base_pct": reg_base_pct,
+        "df_resumen_reg": df_resumen_reg,
         "df_proyeccion": df_proyeccion,
         "df_conexiones": df_conexiones,
         "elementos_corrientes": elementos_corrientes,
@@ -288,6 +338,3 @@ def obtener_datos_para_pdf_corto(ruta_excel):
 if __name__ == "__main__":
     ruta_excel = os.path.join(os.path.dirname(__file__), "datos_red_secundaria.xlsx")
     generar_pdf_corto(ruta_excel)
-
-
-
