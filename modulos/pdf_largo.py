@@ -358,11 +358,18 @@ def generar_pdf_largo(ruta_excel):
         df_conexiones,
         nodos=nodos,
         slack_index=slack_index,
-        Y=Y, Yrr=Yrr, Y_r0=Y_r0,
-        V0=240+0j,
-        col_ni=COL_NI,
-        col_nf=COL_NF,
+        Y=Y,
+        Yrr=Yrr,
+        Y_r0=Y_r0,
+        col_ni="nodo_inicial",   # <-- tu columna real
+        col_nf="nodo_final",     # <-- tu columna real
+        col_dist="distancia",    # <-- tu columna real
+        col_r="resistencia_vano",
+        col_x="reactancia_vano",
+        col_z="Z_vano",
+        col_y="Y_vano",
     )
+
 
     # --- Regulación
     df_reg = calcular_regulacion_voltaje(V, nodos=nodos, nodo_slack=nodo_slack)
@@ -374,3 +381,4 @@ def generar_pdf_largo(ruta_excel):
         perdida_total, nodos_inicio, nodos_final, usuarios, distancias,
         eq=eq
     )
+
