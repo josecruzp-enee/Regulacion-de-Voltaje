@@ -122,10 +122,33 @@ def construir_equivalente_nodal(
     df_Yrr, nota_Yrr = matriz_a_df(Yrr, nodos_r, nd=nd, max_n=max_n, titulo="Yrr")
 
     # ---- vector Y_r0
-    df_Yr0 = pd.DataFrame({
-        "Nodo": [str(n) for n in nodos_r],
-        "Y_r0 (S)": [fmt_c(Y_r0[i, 0], nd=nd) for i in range(Y_r0.shape[0])]
-    })
+    Yr0 = np.asarray(Y_r0)
+    if Yr0.ndim == 1:
+    # (n-1,)
+      Yr0_col = Yr0.reshape(-1, 1)
+    elif Yr0.ndim == 2:
+    # (n-1,1) o (1,n-1)
+        if Yr0.shape[1] == 1:
+        Yr0_col = Yr0
+    elif Yr0.shape[0] == 1:
+        Yr0_col = Yr0.T
+    else:
+        # caso raro: matriz no vector
+        raise ValueError(f"Y_r0 tiene forma inesperada: {Yr0.shape}")
+else:
+    raise ValueError(f"Y_r0 tiene ndim inesperado: {Yr0.ndim}")
+
+# Seguridad: tamaño debe coincidir con nodos_r
+if Yr0_col.shape[0] != len(nodos_r):
+    raise ValueError(
+        f"Tamaño de Y_r0 ({Yr0_col.shape[0]}) no coincide con nodos sin slack ({len(nodos_r)}). "
+        f"Forma original Y_r0: {np.asarray(Y_r0).shape}"
+    )
+
+df_Yr0 = pd.DataFrame({
+    "Nodo": [str(n) for n in nodos_r],
+    "Y_r0 (S)": [fmt_c(Yr0_col[i, 0], nd=nd) for i in range(Yr0_col.shape[0])]
+})
 
     # ---- tabla de ramas (circuito con R y X)
     # Usamos la info ya existente en df_conexiones: Ni, Nf, Dist, r, x, Z, Y
