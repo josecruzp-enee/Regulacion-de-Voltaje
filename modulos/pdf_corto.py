@@ -273,15 +273,15 @@ def obtener_datos_para_pdf_corto(ruta_excel):
     )
 
     # ===== Regulación base (peor nodo) =====
-    df_regulacion = calcular_regulacion_voltaje(V, nodos=nodos, nodo_slack=nodo_slack)
+    #df_regulacion = calcular_regulacion_voltaje(V, nodos=nodos, nodo_slack=nodo_slack)
 
-    col_reg = next((c for c in df_regulacion.columns if "regul" in c.lower()), None)
-    if col_reg is None:
-        raise ValueError(
-            f"No encontré columna de regulación en df_regulacion. Columnas: {list(df_regulacion.columns)}"
-        )
+    #col_reg = next((c for c in df_regulacion.columns if "regul" in c.lower()), None)
+    #if col_reg is None:
+    #    raise ValueError(
+    #        f"No encontré columna de regulación en df_regulacion. Columnas: {list(df_regulacion.columns)}"
+    #    )
 
-    reg_base_pct = float(pd.to_numeric(df_regulacion[col_reg], errors="coerce").max())
+    #reg_base_pct = float(pd.to_numeric(df_regulacion[col_reg], errors="coerce").max())
 
     # ===== Proyectar %Reg estilo RV usando "Demanda (kVA)" con comas =====
     df_proyeccion = proyectar_regulacion_rv(
@@ -338,3 +338,4 @@ def obtener_datos_para_pdf_corto(ruta_excel):
 if __name__ == "__main__":
     ruta_excel = os.path.join(os.path.dirname(__file__), "datos_red_secundaria.xlsx")
     generar_pdf_corto(ruta_excel)
+
