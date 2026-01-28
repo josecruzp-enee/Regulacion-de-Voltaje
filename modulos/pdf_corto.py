@@ -23,7 +23,7 @@ from modulos.secciones_pdf import crear_grafico_voltajes_pdf
 from modulos.demanda import (
     proyectar_demanda,
     proyectar_regulacion_rv,
-    resumen_regulacion_y_demanda,
+    resumen_regulacion_y_demanda,  # se mantiene import por si lo usas después
     crear_grafico_demanda,
 )
 from modulos.graficos_red import crear_grafico_nodos
@@ -43,6 +43,7 @@ estilo_header = estilos["Normal"]
 estilo_header.alignment = TA_CENTER
 estilo_header.fontSize = 9
 
+
 def crear_titulo(texto):
     return Paragraph(texto, ParagraphStyle(
         name="TituloCorto",
@@ -52,6 +53,7 @@ def crear_titulo(texto):
         textColor=colors.HexColor("#003366")
     ))
 
+
 def crear_subtitulo(texto):
     return Paragraph(texto, ParagraphStyle(
         name="SubtituloCorto",
@@ -60,6 +62,7 @@ def crear_subtitulo(texto):
         spaceAfter=8,
         textColor=colors.HexColor("#006699")
     ))
+
 
 def crear_tabla(df, encabezados=None, alineacion="CENTER", font_size=8, col_widths=None):
     """Tabla normal (sin formato especial en encabezados)."""
@@ -80,6 +83,7 @@ def crear_tabla(df, encabezados=None, alineacion="CENTER", font_size=8, col_widt
     ]))
     return tabla
 
+
 def crear_tabla_voltajes(df, encabezados=None, alineacion="CENTER", font_size=8):
     """Tabla de voltajes con anchos de columna fijos y encabezados simplificados."""
     if encabezados:
@@ -89,7 +93,7 @@ def crear_tabla_voltajes(df, encabezados=None, alineacion="CENTER", font_size=8)
         data = df.values.tolist()
 
     # Ajusta manualmente cada columna
-    col_widths = [0.6*inch, 0.8*inch, 1*inch, 1*inch]
+    col_widths = [0.6 * inch, 0.8 * inch, 1 * inch, 1 * inch]
 
     tabla = Table(data, hAlign=alineacion, colWidths=col_widths)
     tabla.setStyle(TableStyle([
@@ -113,9 +117,10 @@ ancho_col1 = (ancho_pagina - 4 * margen) * 0.35
 ancho_col2 = (ancho_pagina - 4 * margen) * 0.35
 ancho_col3 = (ancho_pagina - 4 * margen) * 0.30
 
-frame1 = Frame(margen, margen, ancho_col1, alto_pagina - 2*margen, id="col1")
-frame2 = Frame(margen + ancho_col1 + margen, margen, ancho_col2, alto_pagina - 2*margen, id="col2")
-frame3 = Frame(margen + ancho_col1 + ancho_col2 + 2*margen, margen, ancho_col3, alto_pagina - 2*margen, id="col3")
+frame1 = Frame(margen, margen, ancho_col1, alto_pagina - 2 * margen, id="col1")
+frame2 = Frame(margen + ancho_col1 + margen, margen, ancho_col2, alto_pagina - 2 * margen, id="col2")
+frame3 = Frame(margen + ancho_col1 + ancho_col2 + 2 * margen, margen, ancho_col3, alto_pagina - 2 * margen, id="col3")
+
 
 def aplicar_fondo(cnv, doc, ruta_imagen_fondo):
     try:
@@ -124,6 +129,7 @@ def aplicar_fondo(cnv, doc, ruta_imagen_fondo):
         cnv.drawImage(imagen_fondo, 0, 0, width=ancho, height=alto)
     except Exception:
         pass
+
 
 plantilla = PageTemplate(
     id="tres_columnas_con_fondo",
@@ -181,15 +187,8 @@ def generar_pdf_corto(ruta_excel, ruta_salida=None):
         elementos.append(crear_tabla_voltajes(df_voltajes_fmt, df_voltajes_fmt.columns.tolist(), "CENTER"))
         elementos.append(Spacer(1, 10))
 
-        # ====== NUEVO: Resumen corto de demanda + %Reg ======
-        elementos.append(crear_subtitulo("Resumen de Regulación y Demanda"))
-        elementos.append(crear_tabla(
-            datos["df_resumen_reg"],
-            datos["df_resumen_reg"].columns.tolist(),
-            "CENTER",
-            font_size=7
-        ))
-        elementos.append(Spacer(1, 8))
+        # ✅ QUITADO: Resumen corto de Regulación y Demanda (NO imprimir)
+        # (No se agrega nada aquí)
 
         # ====== Tabla de proyección (incluye % Reg.) ======
         elementos.append(crear_subtitulo("Demanda Proyectada"))
@@ -256,7 +255,7 @@ def obtener_datos_para_pdf_corto(ruta_excel):
     )
 
     Y, Yrr, Y_r0, nodos, slack_index = calcular_matriz_admitancia(df_conexiones)
-    V, df_voltajes = calcular_voltajes_nodales(Yrr, Y_r0, slack_index, nodos, V0=240+0j)
+    V, df_voltajes = calcular_voltajes_nodales(Yrr, Y_r0, slack_index, nodos, V0=240 + 0j)
     nodo_slack = nodos[slack_index]
 
     df_conexiones = calcular_corrientes(df_conexiones, V)
@@ -273,17 +272,18 @@ def obtener_datos_para_pdf_corto(ruta_excel):
     )
 
     # ===== Regulación base (peor nodo) =====
-    #df_regulacion = calcular_regulacion_voltaje(V, nodos=nodos, nodo_slack=nodo_slack)
+    df_regulacion = calcular_regulacion_voltaje(V, nodos=nodos, nodo_slack=nodo_slack)
 
-    #col_reg = next((c for c in df_regulacion.columns if "regul" in c.lower()), None)
-    #if col_reg is None:
-    #    raise ValueError(
-    #        f"No encontré columna de regulación en df_regulacion. Columnas: {list(df_regulacion.columns)}"
-    #    )
+    col_reg = next((c for c in df_regulacion.columns if "regul" in c.lower()), None)
+    if col_reg is None:
+        raise ValueError(
+            f"No encontré columna de regulación en df_regulacion. Columnas: {list(df_regulacion.columns)}"
+        )
 
-    #reg_base_pct = float(pd.to_numeric(df_regulacion[col_reg], errors="coerce").max())
+    # ✅ Necesario para poder proyectar % Reg. correctamente
+    reg_base_pct = float(pd.to_numeric(df_regulacion[col_reg], errors="coerce").max())
 
-    # ===== Proyectar %Reg estilo RV usando "Demanda (kVA)" con comas =====
+    # ===== Proyectar %Reg estilo RV usando "Demanda (kVA)" =====
     df_proyeccion = proyectar_regulacion_rv(
         df_proyeccion,
         reg_base_pct=reg_base_pct,
@@ -293,12 +293,8 @@ def obtener_datos_para_pdf_corto(ruta_excel):
         col_out_num="Reg_pct"
     )
 
-    # ===== Resumen corto para PDF corto =====
-    df_resumen_reg = resumen_regulacion_y_demanda(
-        df_proyeccion,
-        años_objetivo=15,
-        reg_base_pct=reg_base_pct
-    )
+    # ❌ NO se calcula df_resumen_reg porque no se imprimirá
+    # df_resumen_reg = resumen_regulacion_y_demanda(...)
 
     # ===== Corrientes por vano =====
     df_corrientes, comentario_corrientes = tabla_corrientes_vano(
@@ -319,8 +315,7 @@ def obtener_datos_para_pdf_corto(ruta_excel):
         "proyeccion_perdidas": proyeccion_perdidas,
         "df_voltajes": df_voltajes,
         "df_regulacion": df_regulacion,
-        "reg_base_pct": reg_base_pct,
-        "df_resumen_reg": df_resumen_reg,
+        "reg_base_pct": reg_base_pct,   # opcional, por si luego lo quieres mostrar
         "df_proyeccion": df_proyeccion,
         "df_conexiones": df_conexiones,
         "elementos_corrientes": elementos_corrientes,
@@ -338,4 +333,3 @@ def obtener_datos_para_pdf_corto(ruta_excel):
 if __name__ == "__main__":
     ruta_excel = os.path.join(os.path.dirname(__file__), "datos_red_secundaria.xlsx")
     generar_pdf_corto(ruta_excel)
-
