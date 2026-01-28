@@ -2,10 +2,11 @@ pandas
 numpy
 matplotlib
 sympy
-streamlit
 colorama
 reportlab
 openpyxl
 Pillow
 networkx
+streamlit>=1.22.0
+altair>=5
 
