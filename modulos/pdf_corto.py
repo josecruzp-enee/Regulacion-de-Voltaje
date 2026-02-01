@@ -122,13 +122,30 @@ frame2 = Frame(margen + ancho_col1 + margen, margen, ancho_col2, alto_pagina - 2
 frame3 = Frame(margen + ancho_col1 + ancho_col2 + 2 * margen, margen, ancho_col3, alto_pagina - 2 * margen, id="col3")
 
 
-def aplicar_fondo(cnv, doc, ruta_imagen_fondo):
+def aplicar_fondo(cnv, doc, ruta_imagen):
     try:
-        ancho, alto = doc.pagesize
-        imagen_fondo = ImageReader(ruta_imagen_fondo)
-        cnv.drawImage(imagen_fondo, 0, 0, width=ancho, height=alto)
-    except Exception:
-        pass
+        cnv.saveState()
+
+        # 🔹 Tamaño CONTROLADO del logo
+        logo_ancho = 90
+        logo_alto = 45
+
+        # 🔹 Posición (arriba izquierda)
+        x = doc.leftMargin
+        y = doc.pagesize[1] - logo_alto - 15
+
+        imagen = ImageReader(ruta_imagen)
+        cnv.drawImage(
+            imagen,
+            x, y,
+            width=logo_ancho,
+            height=logo_alto,
+            mask="auto"
+        )
+
+        cnv.restoreState()
+    except Exception as e:
+        print(e)
 
 
 plantilla = PageTemplate(
@@ -332,4 +349,5 @@ def obtener_datos_para_pdf_corto(ruta_excel):
 if __name__ == "__main__":
     ruta_excel = os.path.join(os.path.dirname(__file__), "datos_red_secundaria.xlsx")
     generar_pdf_corto(ruta_excel)
+
 
