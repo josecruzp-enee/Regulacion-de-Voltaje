@@ -126,20 +126,27 @@ def aplicar_fondo(cnv, doc, ruta_imagen):
     try:
         cnv.saveState()
 
-        # 🔹 Tamaño CONTROLADO del logo
-        logo_ancho = 130
-        logo_alto = 65
+        # 🔹 Logo un poco más grande (horizontal)
+        logo_ancho = 170   # antes 130
+        logo_alto  = 80    # antes 65
 
-        # 🔹 Posición: dentro de la columna 1 (frame1)
-        x = frame1._x + 6
-        y = frame1._y + frame1._height - logo_alto - 6
+        # 🔹 Posición segura (NO invadir columnas)
+        x = doc.leftMargin
+        y = doc.pagesize[1] - logo_alto - 10
 
         imagen = ImageReader(ruta_imagen)
-        cnv.drawImage(imagen, x, y, width=logo_ancho, height=logo_alto, mask="auto")
+        cnv.drawImage(
+            imagen,
+            x, y,
+            width=logo_ancho,
+            height=logo_alto,
+            mask="auto"
+        )
 
         cnv.restoreState()
     except Exception as e:
         print(e)
+
 
 plantilla = PageTemplate(
     id="tres_columnas_con_fondo",
@@ -344,6 +351,7 @@ def obtener_datos_para_pdf_corto(ruta_excel):
 if __name__ == "__main__":
     ruta_excel = os.path.join(os.path.dirname(__file__), "datos_red_secundaria.xlsx")
     generar_pdf_corto(ruta_excel)
+
 
 
 
