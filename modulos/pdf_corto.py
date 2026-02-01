@@ -134,8 +134,7 @@ def aplicar_fondo(cnv, doc, ruta_imagen_fondo):
 plantilla = PageTemplate(
     id="tres_columnas_con_fondo",
     frames=[frame1, frame2, frame3],
-    onPage=lambda cnv, doc: aplicar_fondo(
-        cnv, doc, os.path.join(os.path.dirname(__file__), "Imagen Encabezado.jpg")
+    onPage=lambda cnv, doc: aplicar_fondo(cnv, doc, os.path.join(os.path.dirname(__file__), "Membrete_SMART_EDS.png")
     ),
 )
 
@@ -333,3 +332,4 @@ def obtener_datos_para_pdf_corto(ruta_excel):
 if __name__ == "__main__":
     ruta_excel = os.path.join(os.path.dirname(__file__), "datos_red_secundaria.xlsx")
     generar_pdf_corto(ruta_excel)
+
