@@ -84,20 +84,30 @@ def calcular_kva_por_area(area_m2: float) -> float:
 
 
 def factor_coincidencia(usuarios: int) -> float:
-    """
-    Asigna el factor de coincidencia según la cantidad de usuarios (lotes).
-    Basado en tabla de la ENEE.
-    """
     tabla = [
-        (1, 1.00), (2, 0.93), (3, 0.85), (4, 0.77), (5, 0.69), (6, 0.67),
-        (7, 0.66), (8, 0.65), (9, 0.64), (10, 0.63), (12, 0.62), (16, 0.61),
-        (22, 0.60), (28, 0.59), (34, 0.58), (41, 0.57), (51, 0.56), (63, 0.55)
+        (1, 1.00),
+        (2, 0.93),
+        (3, 0.85),
+        (4, 0.77),
+        (5, 0.69),
+        (6, 0.67),
+        (7, 0.66),
+        (8, 0.65),
+        (9, 0.64),
+        (11, 0.63),  # 10–11
+        (13, 0.62),  # 12–13
+        (16, 0.61),  # 14–16
+        (22, 0.60),  # 17–22
+        (28, 0.59),  # 23–28
+        (34, 0.58),  # 29–34
+        (41, 0.57),  # 35–41
+        (51, 0.56),  # 42–51
+        (63, 0.55),  # 52–63
     ]
     for umbral, fc in tabla:
         if usuarios <= umbral:
             return fc
     return 0.54
-
 
 # =====================================================
 # Sección #3: Lectura de datos desde Excel
@@ -199,6 +209,7 @@ def cargar_datos_circuito(archivo: str = "datos_red_secundaria.xlsx") -> Dict[st
         "usuarios_especiales": conexiones["usuarios_especiales"],
         "areas_especiales": conexiones["areas_especiales"],
     }
+
 
 
 
