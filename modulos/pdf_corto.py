@@ -127,7 +127,7 @@ def aplicar_fondo(cnv, doc, ruta_imagen):
         cnv.saveState()
 
         # 🔹 Logo un poco más grande (horizontal)
-        logo_ancho = 250   # antes 130
+        logo_ancho = 275   # antes 130
         logo_alto  = 60    # antes 65
 
         # 🔹 Posición segura (NO invadir columnas)
@@ -351,6 +351,7 @@ def obtener_datos_para_pdf_corto(ruta_excel):
 if __name__ == "__main__":
     ruta_excel = os.path.join(os.path.dirname(__file__), "datos_red_secundaria.xlsx")
     generar_pdf_corto(ruta_excel)
+
 
 
 
