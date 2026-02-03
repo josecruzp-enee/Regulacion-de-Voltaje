@@ -38,37 +38,109 @@ def crear_grafo(nodos_inicio, nodos_final, usuarios, distancias):
     return G
 
 
-def calcular_posiciones_red(G, nodo_raiz=1, escala=None, dy=1.5):
+def calcular_posiciones_red(G, nodo_raiz=1, escala=None, sep_y=1.2, margen_y=0.8):
     """
-    Calcula posiciones en forma horizontal con ramificaciones.
-    Si no se da `escala`, se calcula dinámicamente según el total de distancias.
+    Layout 'ingenieril' para red radial:
+    - Calcula un árbol BFS desde el nodo_raiz
+    - Encuentra una TRONCAL (camino más largo desde la raíz en el árbol)
+    - Coloca la troncal en horizontal (y=0), con X proporcional a distancia acumulada
+    - Cuelga las ramas en vertical (y positivos/negativos) evitando colisiones
     """
-    posiciones = {}
-    usados = set()
 
-    # Escala dinámica
+    # --- 0) Escala dinámica (si no se da) ---
     if escala is None:
-        total_distancia = sum(nx.get_edge_attributes(G, "distancia").values())
-        escala = 5 / (total_distancia + 1)
+        total_distancia = sum(nx.get_edge_attributes(G, "distancia").values()) or 1.0
+        escala = 8.0 / (total_distancia + 1.0)
 
-    def asignar_posiciones(nodo, x, y):
-        if nodo in usados:
-            return
-        usados.add(nodo)
-        posiciones[nodo] = (x, y)
+    # --- 1) Construir árbol BFS (si hay ciclos, el árbol los "rompe") ---
+    T = nx.bfs_tree(G, source=nodo_raiz)
 
-        vecinos = [v for v in G.neighbors(nodo) if v not in usados]
-        vecinos.sort()
+    # Si el grafo no es conectado o el nodo_raiz no existe, protegemos:
+    if nodo_raiz not in G.nodes:
+        return {n: (0.0, 0.0) for n in G.nodes}
 
-        for i, vecino in enumerate(vecinos):
-            distancia = G[nodo][vecino].get("distancia", 0)
-            dx = distancia * escala
-            nuevo_x = x + dx
-            nuevo_y = y - dy * (i - (len(vecinos) - 1) / 2)
-            asignar_posiciones(vecino, nuevo_x, nuevo_y)
+    # --- 2) Encontrar hoja más lejana (en el árbol) para definir la troncal ---
+    # Distancia acumulada en el árbol (por atributo 'distancia' del grafo original)
+    def dist_arista(u, v):
+        return float(G[u][v].get("distancia", 0.0))
 
-    asignar_posiciones(nodo_raiz, 0, 0)
-    return posiciones
+    # acumuladas: usando recorrido topológico del árbol
+    dist_acum = {nodo_raiz: 0.0}
+    for u in nx.topological_sort(T):
+        for v in T.successors(u):
+            dist_acum[v] = dist_acum[u] + dist_arista(u, v)
+
+    # hoja más lejana:
+    hojas = [n for n in T.nodes if T.out_degree(n) == 0]
+    if not hojas:
+        return {nodo_raiz: (0.0, 0.0)}
+
+    hoja_lejana = max(hojas, key=lambda n: dist_acum.get(n, 0.0))
+
+    # Troncal = camino raíz -> hoja_lejana
+    troncal = nx.shortest_path(T, source=nodo_raiz, target=hoja_lejana)
+
+    # --- 3) Posiciones iniciales troncal (horizontal) ---
+    pos = {}
+    for n in troncal:
+        x = dist_acum.get(n, 0.0) * escala
+        pos[n] = (x, 0.0)
+
+    # --- 4) Colocar ramas: asignar "slots" en Y para evitar amontonamiento ---
+    # Usaremos una lista de niveles ya ocupados para escoger y libre.
+    ocupados_y = []  # valores de y usados para colgar subárboles
+
+    def siguiente_y_libre(signo=1):
+        """Encuentra un y libre separado por sep_y."""
+        k = 1
+        while True:
+            y = signo * (margen_y + (k - 1) * sep_y)
+            # revisa si está muy cerca de otro ocupado
+            if all(abs(y - yo) >= sep_y * 0.9 for yo in ocupados_y):
+                ocupados_y.append(y)
+                return y
+            k += 1
+
+    # Para alternar arriba/abajo
+    signo = 1
+
+    # Subárbol desde un nodo troncal hacia un hijo que NO está en troncal
+    troncal_set = set(troncal)
+
+    def colocar_subarbol(raiz_rama, y_base):
+        """Coloca un subárbol con y fijo (estructura tipo 'peine')"""
+        # recorrido DFS en el árbol
+        stack = [(raiz_rama, None)]
+        while stack:
+            n, padre = stack.pop()
+            # x proporcional a distancia acumulada (desde raíz del árbol)
+            x = dist_acum.get(n, 0.0) * escala
+
+            # Para ramas, inclinamos ligeramente por profundidad local para separar textos
+            # (opcional) pequeño jitter según orden de aparición:
+            pos[n] = (x, y_base)
+
+            hijos = list(T.successors(n))
+            # Poner hijos después
+            for h in reversed(hijos):
+                stack.append((h, n))
+
+    # Recorremos la troncal y colgamos ramas
+    for n in troncal:
+        hijos = list(T.successors(n))
+        ramas = [h for h in hijos if h not in troncal_set]
+        for r in ramas:
+            y_rama = siguiente_y_libre(signo=signo)
+            signo *= -1
+            colocar_subarbol(r, y_rama)
+
+    # --- 5) Si hubiera nodos fuera del árbol BFS (grafo no conectado), acomodarlos aparte ---
+    for n in G.nodes:
+        if n not in pos:
+            pos[n] = (0.0, siguiente_y_libre(signo=signo))
+            signo *= -1
+
+    return pos
 
 
 # ============================================================
@@ -205,3 +277,4 @@ def crear_grafico_nodos_desde_archivo(ruta_excel):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones
     )
+
