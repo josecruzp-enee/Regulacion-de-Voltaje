@@ -94,17 +94,13 @@ def calcular_posiciones_red(G: nx.Graph, nodo_raiz: int = 1, escala=None, dy: fl
 # -----------------------------
 
 def dibujar_aristas(ax, G, posiciones):
-    for (u, v, d) in G.edges(data=True):
-        if u == v:
-            continue
-
-        x1, y1 = posiciones[u]
-        x2, y2 = posiciones[v]
-
-        # Codo ortogonal: horizontal y luego vertical
-        cx, cy = x2, y1
-        ax.plot([x1, cx], [y1, cy], color="black", linewidth=2)
-        ax.plot([cx, x2], [cy, y2], color="black", linewidth=2)
+    nx.draw_networkx_edges(
+        G,
+        posiciones,
+        edge_color="black",
+        width=2,
+        ax=ax,
+    )
 
 
 def dibujar_nodos(ax, G: nx.Graph, posiciones: dict):
@@ -271,6 +267,7 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones,
     )
+
 
 
 
