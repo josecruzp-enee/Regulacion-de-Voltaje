@@ -232,4 +232,3 @@ def crear_grafico_nodos_desde_archivo(ruta_excel):
         df_conexiones=df_conexiones
     )
 
-   mi scrip actual es este-. mira la grafo que me genera, no me parece. el nodo uno debe estar conectado como corresponde al nodo 2. 
