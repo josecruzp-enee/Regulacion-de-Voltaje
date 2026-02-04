@@ -99,23 +99,44 @@ def dibujar_nodos_generales(ax, G, posiciones):
     )
 
 
-def dibujar_aristas(ax, G, posiciones):
+def dibujar_aristas(ax, G, posiciones, nodo_raiz=1):
     """
-    Dibuja aristas SOLO con segmentos horizontales y verticales (sin diagonales).
-    Estilo "codo" (L-shape):
-      (x1,y1) -> (x2,y1) -> (x2,y2)
+    Aristas con codos ortogonales, evitando atravesar el símbolo del nodo raíz.
     """
     for (u, v, d) in G.edges(data=True):
         if u == v:
             continue
+
         x1, y1 = posiciones[u]
         x2, y2 = posiciones[v]
 
-        # 1) tramo horizontal
-        ax.plot([x1, x2], [y1, y1], color="black", linewidth=2)
+        # --- Offset para no "partir" el triángulo del transformador ---
+        # (ajusta este valor si quieres más separación)
+        offset = 0.35
 
-        # 2) tramo vertical
-        ax.plot([x2, x2], [y1, y2], color="black", linewidth=2)
+        # Si la arista sale del nodo raíz, movemos el primer tramo un poquito
+        # para que la línea no se pegue al símbolo.
+        if u == nodo_raiz:
+            # empujamos el inicio un poquito hacia el destino
+            x1 = x1 + (offset if x2 >= x1 else -offset)
+        elif v == nodo_raiz:
+            x2 = x2 + (offset if x1 >= x2 else -offset)
+
+        # Elegimos el codo "H luego V" por defecto:
+        # (x1,y1)->(x2,y1)->(x2,y2)
+        # pero si eso hace que la vertical pase por encima del nodo raíz, cambiamos a "V luego H".
+        cx, cy = x2, y1  # codo por defecto
+
+        if nodo_raiz in (u, v):
+            xr, yr = posiciones[nodo_raiz]
+            # Si la vertical quedaría muy cerca del x del raíz, usamos el otro codo
+            if abs(cx - xr) < 0.05:
+                cx, cy = x1, y2  # (x1,y1)->(x1,y2)->(x2,y2)
+
+        # Tramo 1
+        ax.plot([x1, cx], [y1, cy], color="black", linewidth=2)
+        # Tramo 2
+        ax.plot([cx, x2], [cy, y2], color="black", linewidth=2)
 
 
 
@@ -177,7 +198,7 @@ def crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias,
     ax = plt.gca()
     dibujar_nodos_transformador(ax, G, posiciones, capacidad_transformador)
     dibujar_nodos_generales(ax, G, posiciones)
-    dibujar_aristas(ax, G, posiciones)
+    dibujar_aristas(ax, G, posiciones, nodo_raiz=1)
     dibujar_etiquetas_nodos(ax, G, posiciones)
     dibujar_acometidas(ax, posiciones, df_conexiones)
     dibujar_distancias_tramos(ax, G, posiciones)
@@ -212,4 +233,5 @@ def crear_grafico_nodos_desde_archivo(ruta_excel):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones
     )
+
 
