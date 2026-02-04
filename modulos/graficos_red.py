@@ -195,7 +195,7 @@ def dibujar_transformador_a_lado(ax, posiciones, capacidad_transformador, nodo=1
         fontsize=9, ha="right", va="center",
         bbox=dict(facecolor="white", alpha=0.6, edgecolor="none")
     )
-)
+
 
 
 # -----------------------------
@@ -271,4 +271,5 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones,
     )
+
 
