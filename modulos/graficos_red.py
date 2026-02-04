@@ -100,16 +100,23 @@ def dibujar_nodos_generales(ax, G, posiciones):
 
 
 def dibujar_aristas(ax, G, posiciones):
-    aristas_normales = [(u, v) for u, v in G.edges() if u != v]
-    nx.draw_networkx_edges(G, posiciones, edgelist=aristas_normales, width=2)
+    """
+    Dibuja aristas SOLO con segmentos horizontales y verticales (sin diagonales).
+    Estilo "codo" (L-shape):
+      (x1,y1) -> (x2,y1) -> (x2,y2)
+    """
+    for (u, v, d) in G.edges(data=True):
+        if u == v:
+            continue
+        x1, y1 = posiciones[u]
+        x2, y2 = posiciones[v]
 
-    bucles = [(u, v) for u, v in G.edges() if u == v and u != 1]
-    for nodo, _ in bucles:
-        x, y = posiciones[nodo]
-        circle = plt.Circle((x, y), 0.1, color="red", fill=False,
-                            linestyle="--", linewidth=2)
-        ax.add_patch(circle)
-        ax.text(x, y + 0.12, "Bucle", fontsize=12, color="red", ha="center")
+        # 1) tramo horizontal
+        ax.plot([x1, x2], [y1, y1], color="black", linewidth=2)
+
+        # 2) tramo vertical
+        ax.plot([x2, x2], [y1, y2], color="black", linewidth=2)
+
 
 
 def dibujar_etiquetas_nodos(ax, G, posiciones):
@@ -205,3 +212,4 @@ def crear_grafico_nodos_desde_archivo(ruta_excel):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones
     )
+
