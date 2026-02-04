@@ -134,88 +134,87 @@ def _camino_mas_largo_desde_raiz(G: nx.Graph, raiz: int = 1) -> list[int]:
     return mejor
 
 
-def calcular_posiciones_troncal_ramales(
-    G: nx.Graph,
-    nodo_raiz: int = 1,
-    dy: float = 1.8,
-    escala: float | None = None,
-) -> dict[int, tuple[float, float]]:
+def calcular_posiciones_plano_real(G, nodo_raiz=1, escala=None):
     """
-    Coloca:
-      - Troncal horizontal (y=0) siguiendo distancias reales acumuladas.
-      - Ramales salen verticales desde el nodo troncal, y luego continúan horizontal a la derecha.
+    Layout estilo plano (sin diagonales) con distancias REALES:
+    - Elegimos una troncal horizontal desde el nodo 1 (la rama con mayor distancia acumulada).
+    - Las demás ramas salen verticales desde el nodo 1, con y = distancia*escala.
+    - Dentro de cada rama, avanzamos horizontal con distancia*escala.
     """
-    if G.number_of_nodes() == 0:
+    import networkx as nx
+
+    if escala is None:
+        total = sum(nx.get_edge_attributes(G, "distancia").values()) or 1.0
+        escala = 6.0 / (total + 1.0)
+
+    if nodo_raiz not in G:
         return {}
 
-    # escala metros->coords
-    if escala is None:
-        total_dist = sum(nx.get_edge_attributes(G, "distancia").values()) or 1.0
-        escala = 6.0 / (total_dist + 1.0)
+    # --- elegir troncal: vecino de la raíz que conduce al camino más largo por distancia ---
+    vecinos = sorted(G.neighbors(nodo_raiz))
+    if not vecinos:
+        return {nodo_raiz: (0.0, 0.0)}
 
-    troncal = _camino_mas_largo_desde_raiz(G, raiz=nodo_raiz)
-    if not troncal:
-        troncal = [nodo_raiz]
+    def dist_acumulada_desde(v0):
+        # BFS/árbol desde v0 evitando volver a la raíz al inicio
+        padres = {v0: nodo_raiz}
+        orden = [v0]
+        for u in orden:
+            for w in sorted(G.neighbors(u)):
+                if w == nodo_raiz:
+                    continue
+                if w in padres:
+                    continue
+                padres[w] = u
+                orden.append(w)
 
-    set_troncal = set(troncal)
-
-    # BFS padres/hijos para orientar ramas desde la raíz
-    padres = {nodo_raiz: None}
-    orden = [nodo_raiz]
-    for u in orden:
-        for v in sorted(G.neighbors(u)):
-            if v in padres:
-                continue
-            padres[v] = u
-            orden.append(v)
-
-    hijos = {n: [] for n in padres}
-    for n, p in padres.items():
-        if p is not None:
+        # hojas del subárbol
+        hijos = {n: [] for n in padres}
+        for n, p in padres.items():
             hijos[p].append(n)
+        hojas = [n for n in padres if len(hijos.get(n, [])) == 0] or [v0]
 
-    pos: dict[int, tuple[float, float]] = {}
+        def costo_hoja(h):
+            s = 0.0
+            n = h
+            while n != nodo_raiz:
+                p = padres[n]
+                s += float(G[p][n].get("distancia", 0.0))
+                n = p
+            return s
 
-    # 1) troncal horizontal
-    x = 0.0
-    pos[troncal[0]] = (x, 0.0)
-    for a, b in zip(troncal[:-1], troncal[1:]):
-        d = float(G[a][b].get("distancia", 0.0))
-        x += d * escala
-        pos[b] = (x, 0.0)
+        return max(costo_hoja(h) for h in hojas)
 
-    # 2) ramales: alternar arriba/abajo por cada nodo troncal para que se lea bien
+    v_troncal = max(vecinos, key=dist_acumulada_desde)
+
+    # --- posiciones ---
+    pos = {nodo_raiz: (0.0, 0.0)}
+
+    # colocar troncal (horizontal)
+    d = float(G[nodo_raiz][v_troncal].get("distancia", 0.0)) * escala
+    pos[v_troncal] = (d, 0.0)
+
+    # colocar otras ramas (verticales) a escala real
     sign = +1
-    usados_offset: dict[int, int] = {n: 0 for n in set_troncal}
+    otros = [v for v in vecinos if v != v_troncal]
+    for v in otros:
+        dv = float(G[nodo_raiz][v].get("distancia", 0.0)) * escala
+        pos[v] = (0.0, sign * dv)
+        sign *= -1
 
-    def colocar_subarbol(padre: int, hijo: int, side_sign: int):
-        px, py = pos[padre]
-        d = float(G[padre][hijo].get("distancia", 0.0)) * escala
-
-        if padre in set_troncal:
-            k = usados_offset[padre]
-            usados_offset[padre] += 1
-            y_h = py + side_sign * dy * (k + 1)
-            # primer tramo del ramal: vertical (misma x)
-            pos[hijo] = (px, y_h)
-        else:
-            # dentro del ramal, avanzar hacia la derecha
-            pos[hijo] = (px + d, py)
-
-        for h2 in sorted(hijos.get(hijo, [])):
-            colocar_subarbol(hijo, h2, side_sign)
-
-    for n in troncal:
-        for h in sorted(hijos.get(n, [])):
-            if h in set_troncal:
+    # propagar cada rama: hacia la derecha (horizontal) con distancia real
+    def propagar(p):
+        x0, y0 = pos[p]
+        for h in sorted(G.neighbors(p)):
+            if h in pos:
                 continue
-            colocar_subarbol(n, h, sign)
-            sign *= -1
+            dd = float(G[p][h].get("distancia", 0.0)) * escala
+            pos[h] = (x0 + dd, y0)
+            propagar(h)
 
-    # 3) si algo quedó sin posición (por datos raros), ponerlo cerca
-    for n in G.nodes():
-        if n not in pos:
-            pos[n] = (0.0, -dy)
+    propagar(v_troncal)
+    for v in otros:
+        propagar(v)
 
     return pos
 
@@ -265,31 +264,91 @@ def dibujar_etiquetas_nodos(ax, G: nx.Graph, pos: dict[int, tuple[float, float]]
     )
 
 
-def dibujar_acometidas(ax, pos: dict[int, tuple[float, float]], df_conexiones, omitir_nodos: set[int] | None = None):
+def dibujar_acometidas(ax, posiciones: dict, df_conexiones, omitir_nodos: set[int] | None = None):
     """
-    Dibuja línea punteada y texto 'Usuarios' bajo cada nodo_final.
+    Acometidas con anti-solape:
+    - Si hay nodos muy cercanos en X, alterna el texto a izquierda/derecha (stagger).
+    - Si aún así quedan cerca, los apila más abajo (stack Y).
     """
     omitir_nodos = omitir_nodos or set()
 
+    # parámetros (ajustables)
+    y_linea = 0.25        # largo de línea punteada base
+    y_texto_1 = 0.08      # separación texto 1 respecto al final de la línea
+    y_stack_gap = 0.22    # separación extra cuando apilamos
+    x_thresh = 0.35       # "cerca" en X (en coords del layout)
+    x_stagger = 0.22      # desplazamiento lateral del texto cuando hay vecinos cercanos
+
+    # tomar nodos finales con usuarios
+    items = []
     for _, row in df_conexiones.iterrows():
         nf = int(row["nodo_final"])
         if nf in omitir_nodos:
             continue
-        if nf not in pos:
+        if nf not in posiciones:
             continue
-
         normales = int(row.get("usuarios", 0) or 0)
         especiales = int(row.get("usuarios_especiales", 0) or 0)
+        x, y = posiciones[nf]
+        items.append((nf, x, y, normales, especiales))
 
-        x, y = pos[nf]
-        y2 = y - 0.25
+    # ordenar por x para detectar cercanía
+    items.sort(key=lambda t: t[1])
 
+    # estado para apilar rótulos por "zona" de X
+    stacks = []  # cada entry: (x_ref, next_y_text)
+
+    def _get_stack(x):
+        # busca stack cercano
+        for i, (xr, ny) in enumerate(stacks):
+            if abs(x - xr) <= x_thresh:
+                return i
+        stacks.append((x, None))
+        return len(stacks) - 1
+
+    for idx, (nf, x, y, normales, especiales) in enumerate(items):
+        # decidir stagger si está cerca del anterior
+        dx = 0.0
+        if idx > 0:
+            x_prev = items[idx - 1][1]
+            if abs(x - x_prev) <= x_thresh:
+                dx = x_stagger if (idx % 2 == 0) else -x_stagger
+
+        # línea punteada
+        y2 = y - y_linea
         ax.plot([x, x], [y, y2], "--", color="gray", linewidth=1)
-        ax.text(x, y2 - 0.05, f"Usuarios: {normales}", fontsize=11, color="blue", ha="center", va="top")
 
+        # apilado vertical por zona de X
+        si = _get_stack(x)
+        xr, next_y = stacks[si]
+
+        y_text = y2 - y_texto_1  # posición preferida
+
+        if next_y is None:
+            # primer texto en esa zona
+            stacks[si] = (xr, y_text - y_stack_gap)
+        else:
+            # si se solapa, empujar hacia abajo
+            if y_text > next_y:
+                y_text = next_y
+            stacks[si] = (xr, y_text - y_stack_gap)
+
+        # texto usuarios
+        ax.text(
+            x + dx, y_text,
+            f"Usuarios: {normales}",
+            fontsize=11, color="blue",
+            ha="center", va="top",
+        )
+
+        # texto especiales (si aplica), debajo del primero
         if especiales > 0:
-            ax.text(x, y2 - 0.20, f"Especiales: {especiales}", fontsize=11, color="red", ha="center", va="top")
-
+            ax.text(
+                x + dx, y_text - 0.15,
+                f"Especiales: {especiales}",
+                fontsize=11, color="red",
+                ha="center", va="top",
+            )
 
 def dibujar_distancias_tramos(ax, G: nx.Graph, pos: dict[int, tuple[float, float]]):
     """
@@ -345,18 +404,20 @@ def crear_grafico_nodos(
         print("⚠️ Grafo no completamente conectado:", info)
 
     # Layout final (troncal + ramales)
-    posiciones = calcular_posiciones_troncal_ramales(G, nodo_raiz=1)
+    posiciones = calcular_posiciones_plano_real(G, nodo_raiz=1)
+
 
     fig = plt.figure(figsize=(10, 6))
     ax = plt.gca()
 
     # Dibujo
-    dibujar_aristas_ortogonales(ax, G, posiciones, lw=2.0)
+    dibujar_aristas_ortogonales(ax, G, posiciones)   # tu función L ortogonal
     dibujar_nodos(ax, G, posiciones)
     dibujar_etiquetas_nodos(ax, G, posiciones)
 
     # Nodo 1 sin acometida (por TS)
-    dibujar_acometidas(ax, posiciones, df_conexiones, omitir_nodos={1})
+    dibujar_acometidas(ax, posiciones, df_conexiones)
+
 
     dibujar_distancias_tramos(ax, G, posiciones)
 
@@ -404,3 +465,4 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones,
     )
+
