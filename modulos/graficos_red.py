@@ -1,26 +1,15 @@
 # -*- coding: utf-8 -*-
 """
 graficos_red.py
-
-Diagrama formal tipo "unifilar CAD" para red secundaria:
-- Layout ortogonal: troncal horizontal + ramales verticales (estilo plano)
-- Textos por nodo en bloque (N-#, A, kVA, P-## si existe)
-- Distancias colocadas como plano (sobre tramos horizontales / al lado de verticales)
-- Salida: ReportLab Image (PNG embebible en PDF)
-
-Requisitos:
-- networkx
-- matplotlib
-- reportlab
+Funciones para visualización de la red eléctrica y generación de diagramas
+usando NetworkX y Matplotlib.
 """
 
-from __future__ import annotations
-
 import io
-from typing import Dict, Tuple, Optional, Iterable, Any, List
-
 import matplotlib.pyplot as plt
 import networkx as nx
+from io import BytesIO
+import matplotlib.pyplot as plt
 from reportlab.platypus import Image
 from reportlab.lib.units import inch
 
@@ -28,439 +17,191 @@ from reportlab.lib.units import inch
 try:
     from modulos.datos import cargar_datos_circuito
 except ImportError:
-    from datos import cargar_datos_circuito  # fallback
+    from datos import cargar_datos_circuito   # fallback si se ejecuta fuera del paquete
 
 
-# =============================================================================
-# Utilidades
-# =============================================================================
+# ============================================================
+# Creación de Grafo y Posiciones
+# ============================================================
 
-def _safe_int(x: Any, default: int = 0) -> int:
-    try:
-        return int(x)
-    except Exception:
-        return default
-
-
-def _safe_float(x: Any, default: float = 0.0) -> float:
-    try:
-        return float(x)
-    except Exception:
-        return default
-
-
-def _configurar_estilo_matplotlib():
-    plt.rcParams["font.family"] = "DejaVu Sans"
-    plt.rcParams["font.size"] = 10
-
-
-def _edge_dist(G: nx.Graph, u: int, v: int) -> float:
-    return float(G[u][v].get("distancia", 0.0))
-
-
-# =============================================================================
-# Grafo
-# =============================================================================
-
-def crear_grafo(
-    nodos_inicio: Iterable[int],
-    nodos_final: Iterable[int],
-    usuarios: Iterable[int],
-    distancias: Iterable[float],
-) -> nx.Graph:
-    """
-    Grafo no dirigido con atributos:
-      - usuarios (int) en arista
-      - distancia (float) en arista
-    """
+def crear_grafo(nodos_inicio, nodos_final, usuarios, distancias):
     G = nx.Graph()
     for ni, nf, u, d in zip(nodos_inicio, nodos_final, usuarios, distancias):
-        ni_i = _safe_int(ni)
-        nf_i = _safe_int(nf)
-        u_i = _safe_int(u)
-        d_f = _safe_float(d)
-
-        if ni_i <= 0 or nf_i <= 0:
-            continue
-
-        G.add_edge(ni_i, nf_i, usuarios=u_i, distancia=d_f)
+        try:
+            G.add_edge(
+                int(ni), int(nf),
+                usuarios=int(u),
+                distancia=float(d)
+            )
+        except Exception as e:
+            print(f"⚠️ Error al agregar arista {ni}-{nf}: {e}")
     return G
 
 
-# =============================================================================
-# Layout CAD ORTOGONAL
-# =============================================================================
-
-def _bfs_tree_y_dist(G: nx.Graph, raiz: int) -> Tuple[nx.DiGraph, Dict[int, float]]:
-    T = nx.bfs_tree(G, source=raiz)
-    dist: Dict[int, float] = {raiz: 0.0}
-    for u in nx.topological_sort(T):
-        for v in T.successors(u):
-            dist[v] = dist[u] + _edge_dist(G, u, v)
-    return T, dist
-
-
-def _troncal_mas_larga(T: nx.DiGraph, dist: Dict[int, float], raiz: int) -> List[int]:
-    hojas = [n for n in T.nodes if T.out_degree(n) == 0]
-    if not hojas:
-        return [raiz]
-    hoja_lejana = max(hojas, key=lambda n: dist.get(n, 0.0))
-    return nx.shortest_path(T, source=raiz, target=hoja_lejana)
-
-
-def calcular_posiciones_cad_ortogonal(
-    G: nx.Graph,
-    nodo_raiz: int = 1,
-    escala_x: Optional[float] = None,
-    estirar_x: float = 1.0,
-    sep_y: float = 1.0,
-) -> Dict[int, Tuple[float, float]]:
+def calcular_posiciones_red(G, nodo_raiz=1, escala=None, dy=1.5):
     """
-    Posiciona nodos con reglas "CAD":
-    - Troncal principal (camino más largo) en horizontal (y=0)
-    - Cualquier rama que sale de la troncal baja en vertical a un nivel y fijo,
-      y continúa horizontal si sigue (sub-troncal)
-    - Separación vertical por niveles (sep_y)
-
-    Retorna pos[n] = (x, y) en unidades abstractas.
+    Calcula posiciones en forma horizontal con ramificaciones.
+    Si no se da `escala`, se calcula dinámicamente según el total de distancias.
     """
-    if nodo_raiz not in G.nodes:
-        return {n: (0.0, 0.0) for n in G.nodes}
+    posiciones = {}
+    usados = set()
 
-    if escala_x is None:
-        total = sum(nx.get_edge_attributes(G, "distancia").values()) or 1.0
-        escala_x = 1.0 / total  # base para normalizar, luego estiramos
+    # Escala dinámica
+    if escala is None:
+        total_distancia = sum(nx.get_edge_attributes(G, "distancia").values())
+        escala = 5 / (total_distancia + 1)
 
-    T, dist = _bfs_tree_y_dist(G, nodo_raiz)
-    troncal = _troncal_mas_larga(T, dist, nodo_raiz)
-    troncal_set = set(troncal)
+    def asignar_posiciones(nodo, x, y):
+        if nodo in usados:
+            return
+        usados.add(nodo)
+        posiciones[nodo] = (x, y)
 
-    pos: Dict[int, Tuple[float, float]] = {}
+        vecinos = [v for v in G.neighbors(nodo) if v not in usados]
+        vecinos.sort()
 
-    # 1) Troncal horizontal
-    for n in troncal:
-        x = dist.get(n, 0.0) * escala_x * 100.0 * estirar_x  # 100 para que "se sienta CAD"
-        pos[n] = (x, 0.0)
+        for i, vecino in enumerate(vecinos):
+            distancia = G[nodo][vecino].get("distancia", 0)
+            dx = distancia * escala
+            nuevo_x = x + dx
+            nuevo_y = y - dy * (i - (len(vecinos) - 1) / 2)
+            asignar_posiciones(vecino, nuevo_x, nuevo_y)
 
-    # 2) Colgar ramas por niveles (1,2,3...) alternando abajo/arriba
-    nivel_usado = []  # y ocupados
-    def siguiente_nivel(signo: int) -> float:
-        k = 1
-        while True:
-            y = signo * (k * sep_y)
-            if y not in nivel_usado:
-                nivel_usado.append(y)
-                return y
-            k += 1
-
-    signo = -1  # por defecto, primero hacia abajo como en planos
-    troncal_index = {n: i for i, n in enumerate(troncal)}
-
-    def colocar_rama(raiz_rama: int, y_nivel: float):
-        """
-        Coloca la rama manteniendo x por distancia acumulada,
-        y constante (horizontal) excepto el primer tramo (vertical ideal).
-        """
-        stack = [raiz_rama]
-        while stack:
-            n = stack.pop()
-            x = dist.get(n, 0.0) * escala_x * 100.0 * estirar_x
-            pos[n] = (x, y_nivel)
-            hijos = list(T.successors(n))
-            for h in reversed(hijos):
-                stack.append(h)
-
-    # Recorremos troncal y asignamos niveles a ramas salientes
-    for n in troncal:
-        hijos = list(T.successors(n))
-        ramas = [h for h in hijos if h not in troncal_set]
-        for r in ramas:
-            y_nivel = siguiente_nivel(signo)
-            signo *= -1  # alternar
-            colocar_rama(r, y_nivel)
-
-    # nodos no conectados (raro)
-    for n in G.nodes:
-        if n not in pos:
-            pos[n] = (0.0, siguiente_nivel(signo))
-            signo *= -1
-
-    return pos
+    asignar_posiciones(nodo_raiz, 0, 0)
+    return posiciones
 
 
-# =============================================================================
-# Estilo CAD: dibujo
-# =============================================================================
+# ============================================================
+# Funciones de Dibujo
+# ============================================================
 
-def _calc_unidades_texto(pos: Dict[int, Tuple[float, float]]) -> float:
-    xs = [p[0] for p in pos.values()]
-    ys = [p[1] for p in pos.values()]
-    xspan = (max(xs) - min(xs)) if xs else 1.0
-    yspan = (max(ys) - min(ys)) if ys else 1.0
-    # unidad para offsets de texto (proporcional al tamaño del dibujo)
-    return max(xspan / 40.0, yspan / 8.0, 1.2)
-
-
-def _map_por_nodo(df, colname_candidates: List[str]) -> Dict[int, Any]:
-    cols = {str(c).strip().lower(): c for c in df.columns}
-    col = None
-    for cand in colname_candidates:
-        if cand in cols:
-            col = cols[cand]
-            break
-    if col is None:
-        return {}
-    out = {}
-    for _, row in df.iterrows():
-        nf = _safe_int(row.get("nodo_final", 0))
-        if nf > 0:
-            out[nf] = row.get(col)
-    return out
-
-
-def dibujar_aristas(ax, G: nx.Graph, pos: Dict[int, Tuple[float, float]], lw: float = 2.4):
-    for u, v in G.edges():
-        if u == v:
-            continue
-        x1, y1 = pos[u]
-        x2, y2 = pos[v]
-        ax.plot([x1, x2], [y1, y2], color="black", linewidth=lw, zorder=2)
-
-
-def dibujar_nodos(ax, pos: Dict[int, Tuple[float, float]], nodo_raiz: int = 1):
-    # puntos negros pequeños
-    xs = []
-    ys = []
-    for n, (x, y) in pos.items():
-        if n == nodo_raiz:
-            continue
-        xs.append(x)
-        ys.append(y)
-    ax.scatter(xs, ys, s=28, c="black", zorder=4)
-
-
-def dibujar_transformador(ax, pos: Dict[int, Tuple[float, float]], nodo_raiz: int, kva: float, etiqueta_ts: str = "TS"):
-    x, y = pos[nodo_raiz]
-    ax.scatter([x], [y], marker="^", s=220, c="black", zorder=5)
+def dibujar_nodos_transformador(ax, G, posiciones, capacidad_transformador):
+    tamaño_transformador = 400
+    nx.draw_networkx_nodes(
+        G, posiciones, nodelist=[1],
+        node_shape="^", node_color="orange",
+        node_size=tamaño_transformador, label="Transformador (Nodo 1)"
+    )
+    x, y = posiciones[1]
+    etiqueta = f"Transformador\n{capacidad_transformador} kVA"
     ax.text(
-        x - 2.2, y,
-        f"{etiqueta_ts}\n{kva:.0f} kVA",
-        ha="right", va="center",
-        fontsize=13, color="black"
+        x - 1, y, etiqueta, fontsize=9, ha="center", color="black",
+        bbox=dict(facecolor="white", alpha=0.6, edgecolor="none")
     )
 
 
-def dibujar_distancias(ax, G: nx.Graph, pos: Dict[int, Tuple[float, float]]):
+def dibujar_nodos_generales(ax, G, posiciones):
+    tamaño_nodos = 200
+    otros_nodos = [n for n in G.nodes if n != 1]
+    nx.draw_networkx_nodes(
+        G, posiciones, nodelist=otros_nodos,
+        node_shape="o", node_color="lightblue", node_size=tamaño_nodos
+    )
+
+
+def dibujar_aristas(ax, G, posiciones):
+    aristas_normales = [(u, v) for u, v in G.edges() if u != v]
+    nx.draw_networkx_edges(G, posiciones, edgelist=aristas_normales, width=2)
+
+    bucles = [(u, v) for u, v in G.edges() if u == v and u != 1]
+    for nodo, _ in bucles:
+        x, y = posiciones[nodo]
+        circle = plt.Circle((x, y), 0.1, color="red", fill=False,
+                            linestyle="--", linewidth=2)
+        ax.add_patch(circle)
+        ax.text(x, y + 0.12, "Bucle", fontsize=12, color="red", ha="center")
+
+
+def dibujar_etiquetas_nodos(ax, G, posiciones):
+    etiquetas_nodos = {n: str(n) for n in G.nodes}
+    nx.draw_networkx_labels(G, posiciones, etiquetas_nodos,
+                            font_size=12, font_weight="bold")
+
+
+def dibujar_acometidas(ax, posiciones, df_conexiones):
+    for _, row in df_conexiones.iterrows():
+        nf = int(row["nodo_final"])
+        normales = int(row["usuarios"])
+        especiales = int(row.get("usuarios_especiales", 0))
+
+        if nf in posiciones:
+            x, y = posiciones[nf]
+            x_u, y_u = x, y - 0.2
+            ax.plot([x, x_u], [y, y_u], color="gray", linestyle="--", linewidth=1)
+
+            # Texto de usuarios normales (arriba)
+            ax.text(x_u, y_u - 0.03,
+                    f"Usuarios: {normales}", fontsize=12,
+                    color="blue", ha="center", va="top")
+
+            # Texto de usuarios especiales (abajo, si existen)
+            if especiales > 0:
+                ax.text(x_u, y_u - 0.18,   # más abajo
+                        f"Especiales: {especiales}", fontsize=12,
+                        color="red", ha="center", va="top")
+
+
+def dibujar_distancias_tramos(ax, G, posiciones):
+    for (u, v, d) in G.edges(data=True):
+        if u != v:
+            x1, y1 = posiciones[u]
+            x2, y2 = posiciones[v]
+            xm, ym = (x1 + x2) / 2, (y1 + y2) / 2
+            dx, dy = x2 - x1, y2 - y1
+            dist = (dx**2 + dy**2) ** 0.5
+            offset_x, offset_y = -dy / dist * 0.1, dx / dist * 0.1
+            ax.text(xm + offset_x, ym + offset_y, f"{d['distancia']} m",
+                    color="red", fontsize=12, ha="center", va="center")
+
+
+# ============================================================
+# Funciones Principales
+# ============================================================
+
+def crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias,
+                        capacidad_transformador, df_conexiones):
     """
-    Estilo CAD:
-    - si el tramo es horizontal: distancia arriba (y + off)
-    - si es vertical: distancia al lado (x + off)
-    - si es diagonal (debería ser raro): offset perpendicular
+    Genera un gráfico a partir de listas de datos y el DataFrame completo.
     """
-    U = _calc_unidades_texto(pos)
-    off = U * 0.35
-
-    for u, v, d in G.edges(data=True):
-        if u == v:
-            continue
-        x1, y1 = pos[u]
-        x2, y2 = pos[v]
-        xm, ym = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-
-        dist_m = _safe_float(d.get("distancia", 0.0))
-        if dist_m <= 0:
-            continue
-
-        dx = x2 - x1
-        dy = y2 - y1
-
-        if abs(dy) < 1e-6:  # horizontal
-            ax.text(xm, ym + off, f"{dist_m:.0f} m", color="black", fontsize=12,
-                    ha="center", va="bottom")
-        elif abs(dx) < 1e-6:  # vertical
-            ax.text(xm + off, ym, f"{dist_m:.0f} m", color="black", fontsize=12,
-                    ha="left", va="center")
-        else:
-            # diagonal: offset perpendicular
-            norm = (dx*dx + dy*dy) ** 0.5 or 1.0
-            ox, oy = (-dy/norm) * off, (dx/norm) * off
-            ax.text(xm + ox, ym + oy, f"{dist_m:.0f} m", color="black", fontsize=12,
-                    ha="center", va="center")
-
-
-def dibujar_textos_por_nodo(ax, pos: Dict[int, Tuple[float, float]], df_conexiones, nodo_raiz: int = 1):
-    """
-    Bloque de texto al lado del nodo, tipo CAD, como tu ejemplo:
-      N-#
-      (A si existe)
-      (kVA si existe)
-      (P-## si existe)
-
-    Si no tienes A/kVA/P en df_conexiones, solo saldrá N-#.
-    """
-    U = _calc_unidades_texto(pos)
-
-    # mapeos opcionales (según nombres comunes)
-    mapa_i = _map_por_nodo(df_conexiones, ["i", "corriente", "i_a", "corriente_a"])
-    mapa_kva = _map_por_nodo(df_conexiones, ["kva", "demanda_kva", "kva_nodo"])
-    mapa_p = _map_por_nodo(df_conexiones, ["punto", "p", "p#"])
-
-    # Si tu P viene como "P-10" en otra columna, puedes añadirla arriba.
-
-    for n, (x, y) in pos.items():
-        if n == nodo_raiz:
-            continue
-
-        # En tu CAD, el bloque suele ir "cerca" del nodo, sin cruzarse con la línea:
-        # - Si y==0 (troncal): texto debajo
-        # - Si y != 0 (ramal): texto a la izquierda del nodo (y centrado un poco arriba)
-        if abs(y) < 1e-9:
-            tx = x
-            ty = y - U * 0.95
-            ha = "center"
-            va = "top"
-        else:
-            tx = x - U * 0.55
-            ty = y + U * 0.10
-            ha = "right"
-            va = "bottom"
-
-        lineas = [f"N-{n}"]
-
-        ii = mapa_i.get(n, None)
-        if ii is not None and _safe_float(ii) > 0:
-            lineas.append(f"{_safe_float(ii):.0f} A")
-
-        kk = mapa_kva.get(n, None)
-        if kk is not None and _safe_float(kk) > 0:
-            lineas.append(f"{_safe_float(kk):.2f} kVA")
-
-        pp = mapa_p.get(n, None)
-        if pp not in (None, "", 0):
-            lineas.append(str(pp))
-
-        ax.text(
-            tx, ty,
-            "\n".join(lineas),
-            ha=ha, va=va,
-            fontsize=12, color="black"
-        )
-
-
-def dibujar_usuarios(ax, pos: Dict[int, Tuple[float, float]], df_conexiones, nodo_raiz: int = 1):
-    """
-    Si quieres mantener usuarios, que sea discreto.
-    Si NO lo quieres (porque en CAD usas N/A/kVA/P), puedes comentar esta función en crear_grafico_nodos().
-    """
-    U = _calc_unidades_texto(pos)
-    mapa_u = _map_por_nodo(df_conexiones, ["usuarios"])
-    for n, (x, y) in pos.items():
-        if n == nodo_raiz:
-            continue
-        if n not in mapa_u:
-            continue
-
-        u = _safe_int(mapa_u.get(n, 0))
-        if u <= 0:
-            continue
-
-        # texto pequeño, debajo del nodo
-        ax.text(x, y - U * 0.35, f"Usuarios: {u}", ha="center", va="top", fontsize=10, color="black")
-
-
-# =============================================================================
-# Principal
-# =============================================================================
-
-def crear_grafico_nodos(
-    nodos_inicio,
-    nodos_final,
-    usuarios,
-    distancias,
-    capacidad_transformador,
-    df_conexiones,
-    nodo_raiz: int = 1,
-    etiqueta_ts: str = "TS",
-    ancho_pulg: float = 8.5,
-    alto_pulg: float = 3.0,
-    titulo: str = "",
-) -> Image:
-    """
-    Genera el diagrama formal (PNG) y lo devuelve como ReportLab Image.
-    """
-    _configurar_estilo_matplotlib()
-
     G = crear_grafo(nodos_inicio, nodos_final, usuarios, distancias)
+    posiciones = calcular_posiciones_red(G, nodo_raiz=1)
 
-    # Layout ortogonal CAD
-    pos = calcular_posiciones_cad_ortogonal(
-        G,
-        nodo_raiz=nodo_raiz,
-        escala_x=None,
-        estirar_x=1.35,   # sube “sensación CAD”
-        sep_y=42.0,       # separación vertical en unidades (más parecido a plano)
-    )
-
-    fig = plt.figure(figsize=(ancho_pulg, alto_pulg))
+    plt.figure(figsize=(10, 6))
     ax = plt.gca()
+    dibujar_nodos_transformador(ax, G, posiciones, capacidad_transformador)
+    dibujar_nodos_generales(ax, G, posiciones)
+    dibujar_aristas(ax, G, posiciones)
+    dibujar_etiquetas_nodos(ax, G, posiciones)
+    dibujar_acometidas(ax, posiciones, df_conexiones)
+    dibujar_distancias_tramos(ax, G, posiciones)
 
-    # Dibujo
-    dibujar_aristas(ax, G, pos, lw=3.0)
-    dibujar_nodos(ax, pos, nodo_raiz=nodo_raiz)
-    dibujar_transformador(ax, pos, nodo_raiz, _safe_float(capacidad_transformador), etiqueta_ts=etiqueta_ts)
-    dibujar_distancias(ax, G, pos)
-    dibujar_textos_por_nodo(ax, pos, df_conexiones, nodo_raiz=nodo_raiz)
+    plt.title("Diagrama de Nodos del Transformador")
+    plt.axis("off")
 
-    # Si NO quieres "Usuarios" porque en CAD no los pones, deja esto comentado:
-    # dibujar_usuarios(ax, pos, df_conexiones, nodo_raiz=nodo_raiz)
-
-    if titulo:
-        ax.set_title(titulo, fontsize=13, color="black", pad=6)
-
-    ax.axis("off")
-    plt.tight_layout()
-
-    # Exportar
     buf = io.BytesIO()
-    plt.savefig(buf, format="PNG", dpi=240, bbox_inches="tight")
-    plt.close(fig)
+    plt.savefig(buf, format="PNG", bbox_inches="tight")
+    plt.close()
     buf.seek(0)
-
-    img = Image(buf, width=6.9 * inch, height=2.6 * inch)
+    img = Image(buf, width=5 * inch, height=3 * inch)
     img.hAlign = "CENTER"
     return img
+   
 
 
-def crear_grafico_nodos_desde_archivo(ruta_excel: str) -> Image:
+def crear_grafico_nodos_desde_archivo(ruta_excel):
     """
     Genera el gráfico directamente a partir de un archivo Excel.
     """
-    (
-        df_conexiones,
-        df_parametros,
-        df_info,
-        tipo_conductor,
-        area_lote,
-        capacidad_transformador,
-        proyecto_numero,
-        proyecto_nombre,
-        transformador_numero,
-        usuarios,
-        distancias,
-        nodos_inicio,
-        nodos_final,
-    ) = cargar_datos_circuito(ruta_excel)
-
-    etiqueta_ts = f"TS-{transformador_numero}" if transformador_numero not in (None, "", 0) else "TS"
+    (df_conexiones, df_parametros, df_info,
+     tipo_conductor, area_lote, capacidad_transformador,
+     proyecto_numero, proyecto_nombre, transformador_numero,
+     usuarios, distancias, nodos_inicio, nodos_final) = cargar_datos_circuito(ruta_excel)
 
     return crear_grafico_nodos(
         nodos_inicio=df_conexiones["nodo_inicial"].astype(int).tolist(),
         nodos_final=df_conexiones["nodo_final"].astype(int).tolist(),
         usuarios=df_conexiones["usuarios"].astype(int).tolist(),
         distancias=df_conexiones["distancia"].astype(float).tolist(),
-        capacidad_transformador=float(capacidad_transformador),
-        df_conexiones=df_conexiones,
-        nodo_raiz=1,
-        etiqueta_ts=etiqueta_ts,
-        titulo="",  # en CAD normalmente no se pone título grande
+        capacidad_transformador=capacidad_transformador,
+        df_conexiones=df_conexiones
     )
