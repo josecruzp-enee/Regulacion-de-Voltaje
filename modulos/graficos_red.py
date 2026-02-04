@@ -2,13 +2,11 @@
 """
 graficos_red.py
 
-Diagrama formal tipo "unifilar CAD" para red secundaria.
-
-Mejoras clave:
-- Layout: troncal principal por distancia + ramas ordenadas por subárbol (menos colisiones)
-- Estilo: sobrio (negro) + longitudes en rojo
-- Etiquetas CAD: N-#, A, kVA, P-## (si existe)
-- Salida: ReportLab Image (PNG)
+Diagrama formal tipo "unifilar CAD" para red secundaria:
+- Layout ortogonal: troncal horizontal + ramales verticales (estilo plano)
+- Textos por nodo en bloque (N-#, A, kVA, P-## si existe)
+- Distancias colocadas como plano (sobre tramos horizontales / al lado de verticales)
+- Salida: ReportLab Image (PNG embebible en PDF)
 
 Requisitos:
 - networkx
@@ -19,7 +17,7 @@ Requisitos:
 from __future__ import annotations
 
 import io
-from typing import Dict, Tuple, Optional, Iterable, List, Any
+from typing import Dict, Tuple, Optional, Iterable, Any, List
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -37,16 +35,6 @@ except ImportError:
 # Utilidades
 # =============================================================================
 
-def _configurar_estilo_matplotlib():
-    # Estilo sobrio
-    plt.rcParams["font.family"] = "DejaVu Sans"
-    plt.rcParams["font.size"] = 10
-
-
-def _edge_dist(G: nx.Graph, u: int, v: int) -> float:
-    return float(G[u][v].get("distancia", 0.0))
-
-
 def _safe_int(x: Any, default: int = 0) -> int:
     try:
         return int(x)
@@ -61,8 +49,17 @@ def _safe_float(x: Any, default: float = 0.0) -> float:
         return default
 
 
+def _configurar_estilo_matplotlib():
+    plt.rcParams["font.family"] = "DejaVu Sans"
+    plt.rcParams["font.size"] = 10
+
+
+def _edge_dist(G: nx.Graph, u: int, v: int) -> float:
+    return float(G[u][v].get("distancia", 0.0))
+
+
 # =============================================================================
-# Creación de grafo
+# Grafo
 # =============================================================================
 
 def crear_grafo(
@@ -83,7 +80,6 @@ def crear_grafo(
         u_i = _safe_int(u)
         d_f = _safe_float(d)
 
-        # Evitar aristas basura
         if ni_i <= 0 or nf_i <= 0:
             continue
 
@@ -92,343 +88,288 @@ def crear_grafo(
 
 
 # =============================================================================
-# Layout mejorado: troncal + ramas por subárbol
+# Layout CAD ORTOGONAL
 # =============================================================================
 
-def _bfs_tree_y_distancias(G: nx.Graph, nodo_raiz: int) -> Tuple[nx.DiGraph, Dict[int, float]]:
-    """
-    Construye BFS tree (dirigido) y calcula distancia acumulada (usando distancias del grafo original).
-    """
-    T = nx.bfs_tree(G, source=nodo_raiz)
-
-    dist_acum: Dict[int, float] = {nodo_raiz: 0.0}
+def _bfs_tree_y_dist(G: nx.Graph, raiz: int) -> Tuple[nx.DiGraph, Dict[int, float]]:
+    T = nx.bfs_tree(G, source=raiz)
+    dist: Dict[int, float] = {raiz: 0.0}
     for u in nx.topological_sort(T):
         for v in T.successors(u):
-            dist_acum[v] = dist_acum[u] + _edge_dist(G, u, v)
-    return T, dist_acum
+            dist[v] = dist[u] + _edge_dist(G, u, v)
+    return T, dist
 
 
-def _camino_troncal_mas_largo(T: nx.DiGraph, dist_acum: Dict[int, float], nodo_raiz: int) -> List[int]:
-    """
-    Troncal = camino raíz->hoja con mayor distancia acumulada.
-    """
+def _troncal_mas_larga(T: nx.DiGraph, dist: Dict[int, float], raiz: int) -> List[int]:
     hojas = [n for n in T.nodes if T.out_degree(n) == 0]
     if not hojas:
-        return [nodo_raiz]
-
-    hoja_lejana = max(hojas, key=lambda n: dist_acum.get(n, 0.0))
-    return nx.shortest_path(T, source=nodo_raiz, target=hoja_lejana)
-
-
-def _tamanio_subarbol(T: nx.DiGraph, raiz: int) -> int:
-    """
-    Tamaño (cantidad de nodos) del subárbol desde 'raiz' en el árbol dirigido.
-    """
-    return len(nx.descendants(T, raiz)) + 1
+        return [raiz]
+    hoja_lejana = max(hojas, key=lambda n: dist.get(n, 0.0))
+    return nx.shortest_path(T, source=raiz, target=hoja_lejana)
 
 
-def calcular_posiciones_red_troncal_mejorado(
+def calcular_posiciones_cad_ortogonal(
     G: nx.Graph,
     nodo_raiz: int = 1,
     escala_x: Optional[float] = None,
-    sep_y: float = 1.15,
-    margen_y: float = 0.85,
-    estirar_x: float = 12.0,
+    estirar_x: float = 1.0,
+    sep_y: float = 1.0,
 ) -> Dict[int, Tuple[float, float]]:
     """
-    Layout CAD-like mejorado:
-    - BFS tree para ordenar (estable)
-    - Troncal principal por distancia acumulada (horizontal)
-    - Ramas asignadas a 'slots' de Y según tamaño de subárbol (reduce colisiones)
-    - X proporcional a distancia acumulada
+    Posiciona nodos con reglas "CAD":
+    - Troncal principal (camino más largo) en horizontal (y=0)
+    - Cualquier rama que sale de la troncal baja en vertical a un nivel y fijo,
+      y continúa horizontal si sigue (sub-troncal)
+    - Separación vertical por niveles (sep_y)
 
-    Nota: Para redes con anillos, el árbol “rompe” el ciclo para el layout; luego se pueden dibujar aristas extra punteadas.
+    Retorna pos[n] = (x, y) en unidades abstractas.
     """
     if nodo_raiz not in G.nodes:
         return {n: (0.0, 0.0) for n in G.nodes}
 
-    # Escala dinámica (si no se da)
     if escala_x is None:
-        total_dist = sum(nx.get_edge_attributes(G, "distancia").values()) or 1.0
-        escala_x = 10.0 / (total_dist + 1.0)
+        total = sum(nx.get_edge_attributes(G, "distancia").values()) or 1.0
+        escala_x = 1.0 / total  # base para normalizar, luego estiramos
 
-    T, dist_acum = _bfs_tree_y_distancias(G, nodo_raiz)
-    troncal = _camino_troncal_mas_largo(T, dist_acum, nodo_raiz)
+    T, dist = _bfs_tree_y_dist(G, nodo_raiz)
+    troncal = _troncal_mas_larga(T, dist, nodo_raiz)
     troncal_set = set(troncal)
 
     pos: Dict[int, Tuple[float, float]] = {}
 
-    # 1) Troncal (y=0)
+    # 1) Troncal horizontal
     for n in troncal:
-        x = dist_acum.get(n, 0.0) * escala_x * estirar_x
+        x = dist.get(n, 0.0) * escala_x * 100.0 * estirar_x  # 100 para que "se sienta CAD"
         pos[n] = (x, 0.0)
 
-    # 2) Slots de Y para ramas
-    ocupados_y: List[float] = []
-
-    def y_libre(signo: int, bloque: int = 1) -> float:
-        """
-        Encuentra un y libre.
-        'bloque' sirve para reservar más separación para ramas grandes.
-        """
+    # 2) Colgar ramas por niveles (1,2,3...) alternando abajo/arriba
+    nivel_usado = []  # y ocupados
+    def siguiente_nivel(signo: int) -> float:
         k = 1
         while True:
-            y = signo * (margen_y + (k - 1) * sep_y * bloque)
-            if all(abs(y - yo) >= sep_y * 0.95 for yo in ocupados_y):
-                ocupados_y.append(y)
+            y = signo * (k * sep_y)
+            if y not in nivel_usado:
+                nivel_usado.append(y)
                 return y
             k += 1
 
-    def colocar_subarbol(raiz_rama: int, y_base: float):
+    signo = -1  # por defecto, primero hacia abajo como en planos
+    troncal_index = {n: i for i, n in enumerate(troncal)}
+
+    def colocar_rama(raiz_rama: int, y_nivel: float):
         """
-        Coloca todo el subárbol con el mismo y_base (unifilar estilo CAD: ramas en "paralelo").
+        Coloca la rama manteniendo x por distancia acumulada,
+        y constante (horizontal) excepto el primer tramo (vertical ideal).
         """
         stack = [raiz_rama]
         while stack:
             n = stack.pop()
-            x = dist_acum.get(n, 0.0) * escala_x * estirar_x
-            pos[n] = (x, y_base)
+            x = dist.get(n, 0.0) * escala_x * 100.0 * estirar_x
+            pos[n] = (x, y_nivel)
             hijos = list(T.successors(n))
             for h in reversed(hijos):
                 stack.append(h)
 
-    # 3) Colgar ramas de la troncal ordenadas por tamaño (ramas grandes primero)
-    signo = 1
+    # Recorremos troncal y asignamos niveles a ramas salientes
     for n in troncal:
         hijos = list(T.successors(n))
         ramas = [h for h in hijos if h not in troncal_set]
-        if not ramas:
-            continue
-
-        # Ordenar por tamaño del subárbol (grande primero) para asignar mejores slots
-        ramas.sort(key=lambda r: _tamanio_subarbol(T, r), reverse=True)
-
         for r in ramas:
-            tam = _tamanio_subarbol(T, r)
-            # ramas grandes reservan más separación
-            bloque = 2 if tam >= 6 else 1
-            yb = y_libre(signo, bloque=bloque)
-            signo *= -1
-            colocar_subarbol(r, yb)
+            y_nivel = siguiente_nivel(signo)
+            signo *= -1  # alternar
+            colocar_rama(r, y_nivel)
 
-    # 4) Nodos fuera del BFS (si el grafo no está conectado)
+    # nodos no conectados (raro)
     for n in G.nodes:
         if n not in pos:
-            yb = y_libre(signo)
+            pos[n] = (0.0, siguiente_nivel(signo))
             signo *= -1
-            pos[n] = (0.0, yb)
 
     return pos
 
 
 # =============================================================================
-# Dibujo formal (CAD-like)
+# Estilo CAD: dibujo
 # =============================================================================
 
-def dibujar_aristas(ax, G: nx.Graph, pos: Dict[int, Tuple[float, float]], puntear_anillos: bool = True, nodo_raiz: int = 1):
-    # Aristas base (negras)
+def _calc_unidades_texto(pos: Dict[int, Tuple[float, float]]) -> float:
+    xs = [p[0] for p in pos.values()]
+    ys = [p[1] for p in pos.values()]
+    xspan = (max(xs) - min(xs)) if xs else 1.0
+    yspan = (max(ys) - min(ys)) if ys else 1.0
+    # unidad para offsets de texto (proporcional al tamaño del dibujo)
+    return max(xspan / 40.0, yspan / 8.0, 1.2)
+
+
+def _map_por_nodo(df, colname_candidates: List[str]) -> Dict[int, Any]:
+    cols = {str(c).strip().lower(): c for c in df.columns}
+    col = None
+    for cand in colname_candidates:
+        if cand in cols:
+            col = cols[cand]
+            break
+    if col is None:
+        return {}
+    out = {}
+    for _, row in df.iterrows():
+        nf = _safe_int(row.get("nodo_final", 0))
+        if nf > 0:
+            out[nf] = row.get(col)
+    return out
+
+
+def dibujar_aristas(ax, G: nx.Graph, pos: Dict[int, Tuple[float, float]], lw: float = 2.4):
     for u, v in G.edges():
         if u == v:
             continue
         x1, y1 = pos[u]
         x2, y2 = pos[v]
-        ax.plot([x1, x2], [y1, y2], color="black", linewidth=2.0, zorder=2)
-
-    if puntear_anillos:
-        # Aristas extra vs BFS tree: punteadas (si hay ciclos)
-        try:
-            T = nx.bfs_tree(G, source=nodo_raiz)
-            tree_edges = set((min(a, b), max(a, b)) for a, b in T.edges())
-            for u, v in G.edges():
-                if u == v:
-                    continue
-                key = (min(u, v), max(u, v))
-                if key not in tree_edges:
-                    x1, y1 = pos[u]
-                    x2, y2 = pos[v]
-                    ax.plot([x1, x2], [y1, y2], color="black", linewidth=1.2, linestyle="--", zorder=3)
-        except Exception:
-            pass
+        ax.plot([x1, x2], [y1, y2], color="black", linewidth=lw, zorder=2)
 
 
 def dibujar_nodos(ax, pos: Dict[int, Tuple[float, float]], nodo_raiz: int = 1):
-    # Nodos generales como puntos negros
-    xs, ys = [], []
+    # puntos negros pequeños
+    xs = []
+    ys = []
     for n, (x, y) in pos.items():
         if n == nodo_raiz:
             continue
         xs.append(x)
         ys.append(y)
-    ax.scatter(xs, ys, s=18, c="black", zorder=4)
+    ax.scatter(xs, ys, s=28, c="black", zorder=4)
 
 
-def dibujar_transformador(ax, pos: Dict[int, Tuple[float, float]], nodo_raiz: int, capacidad_kva: float, etiqueta_ts: str = "TS"):
+def dibujar_transformador(ax, pos: Dict[int, Tuple[float, float]], nodo_raiz: int, kva: float, etiqueta_ts: str = "TS"):
     x, y = pos[nodo_raiz]
-    ax.scatter([x], [y], marker="^", s=120, c="black", zorder=5)
+    ax.scatter([x], [y], marker="^", s=220, c="black", zorder=5)
     ax.text(
-        x - 0.75, y + 0.10,
-        f"{etiqueta_ts}\n{capacidad_kva:.0f} kVA",
-        ha="right", va="bottom",
-        fontsize=9, color="black"
+        x - 2.2, y,
+        f"{etiqueta_ts}\n{kva:.0f} kVA",
+        ha="right", va="center",
+        fontsize=13, color="black"
     )
-
-
-def _map_punto_por_nodo(df_conexiones) -> Dict[int, str]:
-    """
-    Intenta mapear un 'P-##' por nodo final si existe alguna columna compatible.
-    Acepta: 'punto', 'Punto', 'p', 'P', 'estructura', etc. (si trae P-xx).
-    """
-    candidatos = [c for c in df_conexiones.columns]
-    col = None
-    for c in candidatos:
-        cl = str(c).strip().lower()
-        if cl in ("punto", "p", "p#", "p_num", "punto_num", "punto#"):
-            col = c
-            break
-    if col is None:
-        # buscar alguna que contenga "punto"
-        for c in candidatos:
-            if "punto" in str(c).strip().lower():
-                col = c
-                break
-
-    mapa = {}
-    if col is None:
-        return mapa
-
-    for _, row in df_conexiones.iterrows():
-        nf = _safe_int(row.get("nodo_final", 0))
-        val = str(row.get(col, "")).strip()
-        if nf > 0 and val:
-            mapa[nf] = val
-    return mapa
-
-
-def dibujar_etiquetas_cad(
-    ax,
-    pos: Dict[int, Tuple[float, float]],
-    df_conexiones,
-    nodo_raiz: int = 1,
-    mostrar_punto: bool = True,
-):
-    """
-    Etiqueta formal tipo CAD:
-      N-#
-      (corriente A si existe en df_conexiones: 'corriente' o 'I' o 'I_A')
-      (kVA si existe en df_conexiones: 'kva' o 'kVA')
-      P-## (si existe en df)
-    """
-    # Mapas opcionales
-    mapa_punto = _map_punto_por_nodo(df_conexiones) if mostrar_punto else {}
-
-    # Columnas opcionales para A/kVA por nodo final (si existen)
-    cols = {str(c).strip().lower(): c for c in df_conexiones.columns}
-    col_i = cols.get("i") or cols.get("corriente") or cols.get("i_a") or cols.get("corriente_a")
-    col_kva = cols.get("kva") or cols.get("kva_nodo") or cols.get("demanda_kva")
-
-    # Hacemos un mapa por nodo_final para I y kVA (si vienen)
-    mapa_i: Dict[int, float] = {}
-    mapa_kva: Dict[int, float] = {}
-
-    for _, row in df_conexiones.iterrows():
-        nf = _safe_int(row.get("nodo_final", 0))
-        if nf <= 0:
-            continue
-        if col_i:
-            mapa_i[nf] = _safe_float(row.get(col_i, 0.0))
-        if col_kva:
-            mapa_kva[nf] = _safe_float(row.get(col_kva, 0.0))
-
-    for n, (x, y) in pos.items():
-        if n == nodo_raiz:
-            continue
-
-        # Texto principal arriba del nodo
-        lineas = [f"N-{n}"]
-
-        # I (A) opcional
-        if n in mapa_i and mapa_i[n] > 0:
-            lineas.append(f"{mapa_i[n]:.0f} A")
-
-        # kVA opcional
-        if n in mapa_kva and mapa_kva[n] > 0:
-            lineas.append(f"{mapa_kva[n]:.2f} kVA")
-
-        # P-## opcional
-        if mostrar_punto and n in mapa_punto:
-            lineas.append(str(mapa_punto[n]))
-
-        texto = "\n".join(lineas)
-
-        ax.text(
-            x, y + 0.26,
-            texto,
-            ha="center", va="bottom",
-            fontsize=9, color="black"
-        )
-
-
-def dibujar_usuarios(ax, pos: Dict[int, Tuple[float, float]], df_conexiones, nodo_raiz: int = 1):
-    """
-    Usuarios por nodo final, colocados debajo (o arriba si el nodo está abajo).
-    """
-    for _, row in df_conexiones.iterrows():
-        nf = _safe_int(row.get("nodo_final", 0))
-        if nf <= 0 or nf == nodo_raiz:
-            continue
-        if nf not in pos:
-            continue
-
-        usuarios = _safe_int(row.get("usuarios", 0))
-        especiales = _safe_int(row.get("usuarios_especiales", 0))
-
-        x, y = pos[nf]
-        dir_texto = -1 if y >= 0 else 1
-        y_txt = y + dir_texto * 0.55
-
-        # línea punteada corta (estilo acometida)
-        ax.plot([x, x], [y, y_txt], color="black", linewidth=1.0, linestyle="--", zorder=1)
-
-        # texto en negro (formal)
-        ax.text(x, y_txt, f"Usuarios: {usuarios}", ha="center", va="center", fontsize=9, color="black")
-
-        if especiales > 0:
-            ax.text(x, y_txt + dir_texto * 0.22, f"Esp.: {especiales}", ha="center", va="center", fontsize=8, color="black")
 
 
 def dibujar_distancias(ax, G: nx.Graph, pos: Dict[int, Tuple[float, float]]):
     """
-    Distancia centrada por tramo con offset perpendicular (mejor lectura).
+    Estilo CAD:
+    - si el tramo es horizontal: distancia arriba (y + off)
+    - si es vertical: distancia al lado (x + off)
+    - si es diagonal (debería ser raro): offset perpendicular
     """
+    U = _calc_unidades_texto(pos)
+    off = U * 0.35
+
     for u, v, d in G.edges(data=True):
         if u == v:
             continue
-
         x1, y1 = pos[u]
         x2, y2 = pos[v]
-
         xm, ym = (x1 + x2) / 2.0, (y1 + y2) / 2.0
 
         dist_m = _safe_float(d.get("distancia", 0.0))
         if dist_m <= 0:
             continue
 
-        # offset perpendicular pequeño
-        dx, dy = (x2 - x1), (y2 - y1)
-        norm = (dx * dx + dy * dy) ** 0.5 or 1.0
-        ox, oy = (-dy / norm) * 0.18, (dx / norm) * 0.18
+        dx = x2 - x1
+        dy = y2 - y1
+
+        if abs(dy) < 1e-6:  # horizontal
+            ax.text(xm, ym + off, f"{dist_m:.0f} m", color="black", fontsize=12,
+                    ha="center", va="bottom")
+        elif abs(dx) < 1e-6:  # vertical
+            ax.text(xm + off, ym, f"{dist_m:.0f} m", color="black", fontsize=12,
+                    ha="left", va="center")
+        else:
+            # diagonal: offset perpendicular
+            norm = (dx*dx + dy*dy) ** 0.5 or 1.0
+            ox, oy = (-dy/norm) * off, (dx/norm) * off
+            ax.text(xm + ox, ym + oy, f"{dist_m:.0f} m", color="black", fontsize=12,
+                    ha="center", va="center")
+
+
+def dibujar_textos_por_nodo(ax, pos: Dict[int, Tuple[float, float]], df_conexiones, nodo_raiz: int = 1):
+    """
+    Bloque de texto al lado del nodo, tipo CAD, como tu ejemplo:
+      N-#
+      (A si existe)
+      (kVA si existe)
+      (P-## si existe)
+
+    Si no tienes A/kVA/P en df_conexiones, solo saldrá N-#.
+    """
+    U = _calc_unidades_texto(pos)
+
+    # mapeos opcionales (según nombres comunes)
+    mapa_i = _map_por_nodo(df_conexiones, ["i", "corriente", "i_a", "corriente_a"])
+    mapa_kva = _map_por_nodo(df_conexiones, ["kva", "demanda_kva", "kva_nodo"])
+    mapa_p = _map_por_nodo(df_conexiones, ["punto", "p", "p#"])
+
+    # Si tu P viene como "P-10" en otra columna, puedes añadirla arriba.
+
+    for n, (x, y) in pos.items():
+        if n == nodo_raiz:
+            continue
+
+        # En tu CAD, el bloque suele ir "cerca" del nodo, sin cruzarse con la línea:
+        # - Si y==0 (troncal): texto debajo
+        # - Si y != 0 (ramal): texto a la izquierda del nodo (y centrado un poco arriba)
+        if abs(y) < 1e-9:
+            tx = x
+            ty = y - U * 0.95
+            ha = "center"
+            va = "top"
+        else:
+            tx = x - U * 0.55
+            ty = y + U * 0.10
+            ha = "right"
+            va = "bottom"
+
+        lineas = [f"N-{n}"]
+
+        ii = mapa_i.get(n, None)
+        if ii is not None and _safe_float(ii) > 0:
+            lineas.append(f"{_safe_float(ii):.0f} A")
+
+        kk = mapa_kva.get(n, None)
+        if kk is not None and _safe_float(kk) > 0:
+            lineas.append(f"{_safe_float(kk):.2f} kVA")
+
+        pp = mapa_p.get(n, None)
+        if pp not in (None, "", 0):
+            lineas.append(str(pp))
 
         ax.text(
-            xm + ox, ym + oy,
-            f"{dist_m:.1f} m",
-            color="red",
-            fontsize=9,
-            ha="center", va="center"
+            tx, ty,
+            "\n".join(lineas),
+            ha=ha, va=va,
+            fontsize=12, color="black"
         )
 
 
+def dibujar_usuarios(ax, pos: Dict[int, Tuple[float, float]], df_conexiones, nodo_raiz: int = 1):
+    """
+    Si quieres mantener usuarios, que sea discreto.
+    Si NO lo quieres (porque en CAD usas N/A/kVA/P), puedes comentar esta función en crear_grafico_nodos().
+    """
+    U = _calc_unidades_texto(pos)
+    mapa_u = _map_por_nodo(df_conexiones, ["usuarios"])
+    for n, (x, y) in pos.items():
+        if n == nodo_raiz:
+            continue
+        if n not in mapa_u:
+            continue
+
+        u = _safe_int(mapa_u.get(n, 0))
+        if u <= 0:
+            continue
+
+        # texto pequeño, debajo del nodo
+        ax.text(x, y - U * 0.35, f"Usuarios: {u}", ha="center", va="top", fontsize=10, color="black")
+
+
 # =============================================================================
-# Función principal (ReportLab Image)
+# Principal
 # =============================================================================
 
 def crear_grafico_nodos(
@@ -440,9 +381,9 @@ def crear_grafico_nodos(
     df_conexiones,
     nodo_raiz: int = 1,
     etiqueta_ts: str = "TS",
-    ancho_pulg: float = 6.6,
-    alto_pulg: float = 3.6,
-    titulo: str = "Diagrama Unifilar de Nodos",
+    ancho_pulg: float = 8.5,
+    alto_pulg: float = 3.0,
+    titulo: str = "",
 ) -> Image:
     """
     Genera el diagrama formal (PNG) y lo devuelve como ReportLab Image.
@@ -451,46 +392,48 @@ def crear_grafico_nodos(
 
     G = crear_grafo(nodos_inicio, nodos_final, usuarios, distancias)
 
-    pos = calcular_posiciones_red_troncal_mejorado(
+    # Layout ortogonal CAD
+    pos = calcular_posiciones_cad_ortogonal(
         G,
         nodo_raiz=nodo_raiz,
-        escala_x=None,        # dinámica
-        sep_y=1.15,           # separación vertical ramas
-        margen_y=0.85,
-        estirar_x=12.0,       # “lineal” tipo CAD
+        escala_x=None,
+        estirar_x=1.35,   # sube “sensación CAD”
+        sep_y=42.0,       # separación vertical en unidades (más parecido a plano)
     )
 
     fig = plt.figure(figsize=(ancho_pulg, alto_pulg))
     ax = plt.gca()
 
     # Dibujo
-    dibujar_aristas(ax, G, pos, puntear_anillos=True, nodo_raiz=nodo_raiz)
+    dibujar_aristas(ax, G, pos, lw=3.0)
     dibujar_nodos(ax, pos, nodo_raiz=nodo_raiz)
     dibujar_transformador(ax, pos, nodo_raiz, _safe_float(capacidad_transformador), etiqueta_ts=etiqueta_ts)
-    dibujar_etiquetas_cad(ax, pos, df_conexiones, nodo_raiz=nodo_raiz, mostrar_punto=True)
-    dibujar_usuarios(ax, pos, df_conexiones, nodo_raiz=nodo_raiz)
     dibujar_distancias(ax, G, pos)
+    dibujar_textos_por_nodo(ax, pos, df_conexiones, nodo_raiz=nodo_raiz)
 
-    # Título sobrio
-    ax.set_title(titulo, fontsize=11, color="black", pad=8)
+    # Si NO quieres "Usuarios" porque en CAD no los pones, deja esto comentado:
+    # dibujar_usuarios(ax, pos, df_conexiones, nodo_raiz=nodo_raiz)
+
+    if titulo:
+        ax.set_title(titulo, fontsize=13, color="black", pad=6)
+
     ax.axis("off")
     plt.tight_layout()
 
-    # Exportar a PNG
+    # Exportar
     buf = io.BytesIO()
     plt.savefig(buf, format="PNG", dpi=240, bbox_inches="tight")
     plt.close(fig)
     buf.seek(0)
 
-    # ReportLab Image
-    img = Image(buf, width=6.5 * inch, height=3.6 * inch)
+    img = Image(buf, width=6.9 * inch, height=2.6 * inch)
     img.hAlign = "CENTER"
     return img
 
 
 def crear_grafico_nodos_desde_archivo(ruta_excel: str) -> Image:
     """
-    Genera el gráfico a partir de Excel.
+    Genera el gráfico directamente a partir de un archivo Excel.
     """
     (
         df_conexiones,
@@ -519,5 +462,5 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str) -> Image:
         df_conexiones=df_conexiones,
         nodo_raiz=1,
         etiqueta_ts=etiqueta_ts,
-        titulo="Diagrama Unifilar de Nodos",
+        titulo="",  # en CAD normalmente no se pone título grande
     )
