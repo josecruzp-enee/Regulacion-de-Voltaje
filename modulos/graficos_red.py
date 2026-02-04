@@ -99,9 +99,10 @@ def dibujar_nodos_generales(ax, G, posiciones):
     )
 
 
-def dibujar_aristas(ax, G, posiciones, nodo_raiz=1):
+def dibujar_aristas(ax, G, posiciones, nodo_raiz=1, stub=0.35):
     """
-    Aristas con codos ortogonales, evitando atravesar el símbolo del nodo raíz.
+    Dibuja aristas con codos ortogonales (L) y agrega un 'stub' corto
+    para que la línea conecte visualmente con el símbolo del transformador.
     """
     for (u, v, d) in G.edges(data=True):
         if u == v:
@@ -110,33 +111,30 @@ def dibujar_aristas(ax, G, posiciones, nodo_raiz=1):
         x1, y1 = posiciones[u]
         x2, y2 = posiciones[v]
 
-        # --- Offset para no "partir" el triángulo del transformador ---
-        # (ajusta este valor si quieres más separación)
-        offset = 0.35
-
-        # Si la arista sale del nodo raíz, movemos el primer tramo un poquito
-        # para que la línea no se pegue al símbolo.
+        # --- Si participa el nodo raíz, crear punto de salida/entrada (stub) ---
         if u == nodo_raiz:
-            # empujamos el inicio un poquito hacia el destino
-            x1 = x1 + (offset if x2 >= x1 else -offset)
+            # punto de salida desde raíz hacia la dirección del otro nodo (en x)
+            sx = x1 + (stub if x2 >= x1 else -stub)
+            sy = y1
+            # dibuja el stub (conecta con el triángulo)
+            ax.plot([x1, sx], [y1, sy], color="black", linewidth=2)
+            # ahora la arista sale desde (sx,sy)
+            x1, y1 = sx, sy
+
         elif v == nodo_raiz:
-            x2 = x2 + (offset if x1 >= x2 else -offset)
+            # punto de entrada hacia raíz (stub)
+            tx = x2 + (stub if x1 >= x2 else -stub)
+            ty = y2
+            ax.plot([x2, tx], [y2, ty], color="black", linewidth=2)
+            x2, y2 = tx, ty
 
-        # Elegimos el codo "H luego V" por defecto:
-        # (x1,y1)->(x2,y1)->(x2,y2)
-        # pero si eso hace que la vertical pase por encima del nodo raíz, cambiamos a "V luego H".
-        cx, cy = x2, y1  # codo por defecto
+        # --- Codo ortogonal: H luego V ---
+        cx, cy = x2, y1
 
-        if nodo_raiz in (u, v):
-            xr, yr = posiciones[nodo_raiz]
-            # Si la vertical quedaría muy cerca del x del raíz, usamos el otro codo
-            if abs(cx - xr) < 0.05:
-                cx, cy = x1, y2  # (x1,y1)->(x1,y2)->(x2,y2)
-
-        # Tramo 1
+        # dibujar dos segmentos (sin diagonales)
         ax.plot([x1, cx], [y1, cy], color="black", linewidth=2)
-        # Tramo 2
         ax.plot([cx, x2], [cy, y2], color="black", linewidth=2)
+
 
 
 
@@ -198,7 +196,7 @@ def crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias,
     ax = plt.gca()
     dibujar_nodos_transformador(ax, G, posiciones, capacidad_transformador)
     dibujar_nodos_generales(ax, G, posiciones)
-    dibujar_aristas(ax, G, posiciones, nodo_raiz=1)
+    dibujar_aristas(ax, G, posiciones, nodo_raiz=1, stub=0.35)
     dibujar_etiquetas_nodos(ax, G, posiciones)
     dibujar_acometidas(ax, posiciones, df_conexiones)
     dibujar_distancias_tramos(ax, G, posiciones)
@@ -233,5 +231,6 @@ def crear_grafico_nodos_desde_archivo(ruta_excel):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones
     )
+
 
 
