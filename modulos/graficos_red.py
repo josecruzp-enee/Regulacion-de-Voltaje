@@ -9,189 +9,258 @@ import io
 import matplotlib.pyplot as plt
 import networkx as nx
 from io import BytesIO
-import matplotlib.pyplot as plt
 from reportlab.platypus import Image
 from reportlab.lib.units import inch
 
-# Importa función para cargar datos
+# ============================================================
+# Carga de datos
+# ============================================================
+
 try:
     from modulos.datos import cargar_datos_circuito
 except ImportError:
-    from datos import cargar_datos_circuito   # fallback si se ejecuta fuera del paquete
+    from datos import cargar_datos_circuito
 
 
 # ============================================================
-# Creación de Grafo y Posiciones
+# Creación y verificación de grafo
 # ============================================================
 
 def crear_grafo(nodos_inicio, nodos_final, usuarios, distancias):
     G = nx.Graph()
     for ni, nf, u, d in zip(nodos_inicio, nodos_final, usuarios, distancias):
-        try:
-            G.add_edge(
-                int(ni), int(nf),
-                usuarios=int(u),
-                distancia=float(d)
-            )
-        except Exception as e:
-            print(f"⚠️ Error al agregar arista {ni}-{nf}: {e}")
+        G.add_edge(
+            int(ni),
+            int(nf),
+            usuarios=int(u),
+            distancia=float(d)
+        )
     return G
 
 
+def verificar_grafo(G, nodo_raiz=1):
+    """
+    Verifica conectividad real del grafo desde el nodo raíz.
+    """
+    if nodo_raiz not in G:
+        return {
+            "ok": False,
+            "error": f"Nodo raíz {nodo_raiz} no existe"
+        }
+
+    alcanzables = set(nx.node_connected_component(G, nodo_raiz))
+    todos = set(G.nodes())
+
+    return {
+        "ok": alcanzables == todos,
+        "nodos": sorted(todos),
+        "vecinos_raiz": sorted(G.neighbors(nodo_raiz)),
+        "desconectados": sorted(todos - alcanzables),
+        "aristas": sorted((int(u), int(v)) for u, v in G.edges())
+    }
+
+
+# ============================================================
+# Posicionamiento del grafo
+# ============================================================
+
 def calcular_posiciones_red(G, nodo_raiz=1, escala=None, dy=1.5):
     """
-    Calcula posiciones en forma horizontal con ramificaciones.
-    Si no se da `escala`, se calcula dinámicamente según el total de distancias.
+    Disposición horizontal principal con ramificaciones verticales.
     """
     posiciones = {}
-    usados = set()
+    visitados = set()
 
-    # Escala dinámica
     if escala is None:
-        total_distancia = sum(nx.get_edge_attributes(G, "distancia").values())
-        escala = 5 / (total_distancia + 1)
+        total_dist = sum(nx.get_edge_attributes(G, "distancia").values())
+        escala = 5 / (total_dist + 1)
 
-    def asignar_posiciones(nodo, x, y):
-        if nodo in usados:
-            return
-        usados.add(nodo)
+    def dfs(nodo, x, y):
+        visitados.add(nodo)
         posiciones[nodo] = (x, y)
 
-        vecinos = [v for v in G.neighbors(nodo) if v not in usados]
+        vecinos = [v for v in G.neighbors(nodo) if v not in visitados]
         vecinos.sort()
 
-        for i, vecino in enumerate(vecinos):
-            distancia = G[nodo][vecino].get("distancia", 0)
-            dx = distancia * escala
-            nuevo_x = x + dx
-            nuevo_y = y - dy * (i - (len(vecinos) - 1) / 2)
-            asignar_posiciones(vecino, nuevo_x, nuevo_y)
+        for i, v in enumerate(vecinos):
+            d = G[nodo][v]["distancia"]
+            dx = d * escala
+            ny = y - dy * (i - (len(vecinos) - 1) / 2)
+            dfs(v, x + dx, ny)
 
-    asignar_posiciones(nodo_raiz, 0, 0)
+    dfs(nodo_raiz, 0, 0)
     return posiciones
 
 
 # ============================================================
-# Funciones de Dibujo
+# Dibujo de elementos
 # ============================================================
 
-def dibujar_simbolo_transformador(ax, posiciones, capacidad_transformador, nodo_raiz=1):
-    """
-    Dibuja el símbolo del transformador a la par del nodo 1 (no reemplaza el nodo).
-    """
-    if nodo_raiz not in posiciones:
-        return
-
-    x, y = posiciones[nodo_raiz]
-
-    # Offset hacia la izquierda del nodo 1 (ajustable)
-    dx = 0.8
-    dy = 0.0
-
-    xt, yt = x - dx, y + dy
-
-    # símbolo discreto (triángulo negro)
-    ax.scatter([xt], [yt], marker="^", s=160, c="orange", edgecolors="black", zorder=5)
-
-    # texto a la izquierda del símbolo
-    ax.text(
-        xt - 0.2, yt,
-        f"Transformador\n{float(capacidad_transformador):.0f} kVA",
-        fontsize=9, ha="right", va="center", color="black"
-    )
-
-
-def dibujar_nodos_generales(ax, G, posiciones):
-    tamaño_nodos = 200
-    # ✅ incluir también el nodo 1 como nodo normal
+def dibujar_nodos(ax, G, posiciones):
     nx.draw_networkx_nodes(
-        G, posiciones, nodelist=list(G.nodes),
-        node_shape="o", node_color="lightblue", node_size=tamaño_nodos,
-        edgecolors="black", linewidths=1.0
+        G,
+        posiciones,
+        nodelist=list(G.nodes),
+        node_size=220,
+        node_color="lightblue",
+        edgecolors="black",
+        zorder=3
     )
 
 
 def dibujar_aristas(ax, G, posiciones):
     """
-    Aristas ortogonales (sin diagonales), sin stub.
+    Aristas ortogonales (L) SIN stubs especiales.
     """
-    for (u, v, d) in G.edges(data=True):
-        if u == v:
-            continue
-
+    for u, v in G.edges():
         x1, y1 = posiciones[u]
         x2, y2 = posiciones[v]
 
-        # Codo H->V
-        ax.plot([x1, x2], [y1, y1], color="black", linewidth=2, zorder=1)
-        ax.plot([x2, x2], [y1, y2], color="black", linewidth=2, zorder=1)
-
-
+        cx, cy = x2, y1
+        ax.plot([x1, cx], [y1, cy], color="black", linewidth=2, zorder=1)
+        ax.plot([cx, x2], [cy, y2], color="black", linewidth=2, zorder=1)
 
 
 def dibujar_etiquetas_nodos(ax, G, posiciones):
-    etiquetas_nodos = {n: str(n) for n in G.nodes}
-    nx.draw_networkx_labels(G, posiciones, etiquetas_nodos,
-                            font_size=12, font_weight="bold")
+    nx.draw_networkx_labels(
+        G,
+        posiciones,
+        labels={n: str(n) for n in G.nodes},
+        font_size=12,
+        font_weight="bold",
+        zorder=4
+    )
 
 
 def dibujar_acometidas(ax, posiciones, df_conexiones):
     for _, row in df_conexiones.iterrows():
         nf = int(row["nodo_final"])
-        normales = int(row["usuarios"])
+        usuarios = int(row["usuarios"])
         especiales = int(row.get("usuarios_especiales", 0))
 
-        if nf in posiciones:
-            x, y = posiciones[nf]
-            x_u, y_u = x, y - 0.2
-            ax.plot([x, x_u], [y, y_u], color="gray", linestyle="--", linewidth=1)
+        if nf not in posiciones:
+            continue
 
-            # Texto de usuarios normales (arriba)
-            ax.text(x_u, y_u - 0.03,
-                    f"Usuarios: {normales}", fontsize=12,
-                    color="blue", ha="center", va="top")
+        x, y = posiciones[nf]
+        y2 = y - 0.25
 
-            # Texto de usuarios especiales (abajo, si existen)
-            if especiales > 0:
-                ax.text(x_u, y_u - 0.18,   # más abajo
-                        f"Especiales: {especiales}", fontsize=12,
-                        color="red", ha="center", va="top")
+        ax.plot([x, x], [y, y2], "--", color="gray", linewidth=1, zorder=2)
+
+        ax.text(
+            x, y2 - 0.05,
+            f"Usuarios: {usuarios}",
+            fontsize=11,
+            color="blue",
+            ha="center",
+            va="top",
+            zorder=4
+        )
+
+        if especiales > 0:
+            ax.text(
+                x, y2 - 0.20,
+                f"Especiales: {especiales}",
+                fontsize=11,
+                color="red",
+                ha="center",
+                va="top",
+                zorder=4
+            )
 
 
 def dibujar_distancias_tramos(ax, G, posiciones):
-    for (u, v, d) in G.edges(data=True):
-        if u != v:
-            x1, y1 = posiciones[u]
-            x2, y2 = posiciones[v]
-            xm, ym = (x1 + x2) / 2, (y1 + y2) / 2
-            dx, dy = x2 - x1, y2 - y1
-            dist = (dx**2 + dy**2) ** 0.5
-            offset_x, offset_y = -dy / dist * 0.1, dx / dist * 0.1
-            ax.text(xm + offset_x, ym + offset_y, f"{d['distancia']} m",
-                    color="red", fontsize=12, ha="center", va="center")
+    for u, v, d in G.edges(data=True):
+        x1, y1 = posiciones[u]
+        x2, y2 = posiciones[v]
+
+        xm, ym = (x1 + x2) / 2, (y1 + y2) / 2
+        ax.text(
+            xm,
+            ym + 0.15,
+            f"{d['distancia']} m",
+            fontsize=11,
+            color="red",
+            ha="center",
+            va="center",
+            zorder=4
+        )
+
+
+def dibujar_transformador_a_lado(
+    ax,
+    posiciones,
+    capacidad_transformador,
+    nodo=1,
+    dx=-0.9,
+    dy=0.0
+):
+    """
+    Dibuja el símbolo del transformador A LA PAR del nodo,
+    sin reemplazarlo ni tocar aristas.
+    """
+    if nodo not in posiciones:
+        return
+
+    x, y = posiciones[nodo]
+    xt, yt = x + dx, y + dy
+
+    ax.scatter(
+        [xt],
+        [yt],
+        marker="^",
+        s=260,
+        c="orange",
+        edgecolors="black",
+        zorder=5
+    )
+
+    ax.text(
+        xt - 0.15,
+        yt,
+        f"Transformador\n{capacidad_transformador} kVA",
+        fontsize=9,
+        ha="right",
+        va="center",
+        bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"),
+        zorder=6
+    )
 
 
 # ============================================================
-# Funciones Principales
+# Función principal
 # ============================================================
 
-def crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias,
-                        capacidad_transformador, df_conexiones):
-    """
-    Genera un gráfico a partir de listas de datos y el DataFrame completo.
-    """
+def crear_grafico_nodos(
+    nodos_inicio,
+    nodos_final,
+    usuarios,
+    distancias,
+    capacidad_transformador,
+    df_conexiones
+):
     G = crear_grafo(nodos_inicio, nodos_final, usuarios, distancias)
+
+    info = verificar_grafo(G, nodo_raiz=1)
+    if not info["ok"]:
+        print("⚠️ Advertencia: grafo no completamente conectado")
+        print(info)
+
     posiciones = calcular_posiciones_red(G, nodo_raiz=1)
 
     plt.figure(figsize=(10, 6))
     ax = plt.gca()
-    dibujar_nodos_generales(ax, G, posiciones)
+
+    dibujar_nodos(ax, G, posiciones)
     dibujar_aristas(ax, G, posiciones)
     dibujar_etiquetas_nodos(ax, G, posiciones)
     dibujar_acometidas(ax, posiciones, df_conexiones)
     dibujar_distancias_tramos(ax, G, posiciones)
-    dibujar_simbolo_transformador(ax, posiciones, capacidad_transformador, nodo_raiz=1)
-
+    dibujar_transformador_a_lado(
+        ax,
+        posiciones,
+        capacidad_transformador,
+        nodo=1
+    )
 
     plt.title("Diagrama de Nodos del Transformador")
     plt.axis("off")
@@ -199,21 +268,33 @@ def crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias,
     buf = io.BytesIO()
     plt.savefig(buf, format="PNG", bbox_inches="tight")
     plt.close()
+
     buf.seek(0)
     img = Image(buf, width=5 * inch, height=3 * inch)
     img.hAlign = "CENTER"
     return img
-   
 
+
+# ============================================================
+# Desde archivo Excel
+# ============================================================
 
 def crear_grafico_nodos_desde_archivo(ruta_excel):
-    """
-    Genera el gráfico directamente a partir de un archivo Excel.
-    """
-    (df_conexiones, df_parametros, df_info,
-     tipo_conductor, area_lote, capacidad_transformador,
-     proyecto_numero, proyecto_nombre, transformador_numero,
-     usuarios, distancias, nodos_inicio, nodos_final) = cargar_datos_circuito(ruta_excel)
+    (
+        df_conexiones,
+        df_parametros,
+        df_info,
+        tipo_conductor,
+        area_lote,
+        capacidad_transformador,
+        proyecto_numero,
+        proyecto_nombre,
+        transformador_numero,
+        usuarios,
+        distancias,
+        nodos_inicio,
+        nodos_final
+    ) = cargar_datos_circuito(ruta_excel)
 
     return crear_grafico_nodos(
         nodos_inicio=df_conexiones["nodo_inicial"].astype(int).tolist(),
@@ -223,7 +304,3 @@ def crear_grafico_nodos_desde_archivo(ruta_excel):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones
     )
-
-
-
-
