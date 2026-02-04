@@ -93,13 +93,15 @@ def calcular_posiciones_red(G: nx.Graph, nodo_raiz: int = 1, escala=None, dy: fl
 # Dibujo
 # -----------------------------
 
-def dibujar_aristas(ax, G: nx.Graph, posiciones: dict):
-    """
-    Aristas ortogonales (L) SIN stubs.
-    """
-    for u, v in G.edges():
+def dibujar_aristas(ax, G, posiciones):
+    for (u, v, d) in G.edges(data=True):
+        if u == v:
+            continue
+
         x1, y1 = posiciones[u]
         x2, y2 = posiciones[v]
+
+        # Codo ortogonal: horizontal y luego vertical
         cx, cy = x2, y1
         ax.plot([x1, cx], [y1, cy], color="black", linewidth=2)
         ax.plot([cx, x2], [cy, y2], color="black", linewidth=2)
@@ -120,15 +122,14 @@ def dibujar_nodos(ax, G: nx.Graph, posiciones: dict):
     )
 
 
-def dibujar_etiquetas_nodos(ax, G: nx.Graph, posiciones: dict):
-    nx.draw_networkx_labels(
-        G,
-        posiciones,
-        labels={n: str(n) for n in G.nodes},
-        font_size=12,
-        font_weight="bold",
-        ax=ax,
+def dibujar_nodos(ax, G, posiciones):
+    tamaño_nodos = 200
+    nx.draw_networkx_nodes(
+        G, posiciones, nodelist=list(G.nodes),
+        node_shape="o", node_color="lightblue", node_size=tamaño_nodos,
+        edgecolors="black"
     )
+
 
 
 def dibujar_acometidas(ax, posiciones: dict, df_conexiones):
@@ -181,27 +182,20 @@ def dibujar_distancias_tramos(ax, G: nx.Graph, posiciones: dict):
         ax.text(xm, ym + 0.15, f"{dist} m", fontsize=11, color="red", ha="center")
 
 
-def dibujar_transformador_a_lado(ax, posiciones: dict, capacidad_transformador, nodo: int = 1, dx: float = -0.9, dy: float = 0.0):
-    """
-    Dibuja el símbolo del transformador A LA PAR del nodo (triángulo aparte).
-    """
+def dibujar_transformador_a_lado(ax, posiciones, capacidad_transformador, nodo=1, dx=-1.2, dy=0.0):
     if nodo not in posiciones:
         return
-
     x, y = posiciones[nodo]
     xt, yt = x + dx, y + dy
 
     ax.scatter([xt], [yt], marker="^", s=260, c="orange", edgecolors="black")
-
     ax.text(
-        xt - 0.15,
-        yt,
+        xt - 0.15, yt,
         f"Transformador\n{capacidad_transformador} kVA",
-        fontsize=9,
-        ha="right",
-        va="center",
-        bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"),
+        fontsize=9, ha="right", va="center",
+        bbox=dict(facecolor="white", alpha=0.6, edgecolor="none")
     )
+)
 
 
 # -----------------------------
@@ -225,12 +219,13 @@ def crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias, capacid
     ax = plt.gca()
 
     # Orden de dibujo (equivalente a zorder, pero compatible)
-    dibujar_aristas(ax, G, posiciones)
-    dibujar_nodos(ax, G, posiciones)
+    dibujar_nodos_generales(ax, G, posiciones) 
+    dibujar_aristas(ax, G, posiciones)           
     dibujar_etiquetas_nodos(ax, G, posiciones)
     dibujar_acometidas(ax, posiciones, df_conexiones)
     dibujar_distancias_tramos(ax, G, posiciones)
     dibujar_transformador_a_lado(ax, posiciones, capacidad_transformador, nodo=1)
+
 
     plt.title("Diagrama de Nodos del Transformador")
     plt.axis("off")
@@ -276,3 +271,4 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones,
     )
+
