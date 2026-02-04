@@ -110,7 +110,7 @@ def dibujar_nodos(ax, G: nx.Graph, posiciones: dict):
     nx.draw_networkx_nodes(
         G,
         posiciones,
-        nodelist=list(G.nodes),
+        nodelist=list(G.nodes()),
         node_size=220,
         node_color="lightblue",
         edgecolors="black",
@@ -118,14 +118,16 @@ def dibujar_nodos(ax, G: nx.Graph, posiciones: dict):
     )
 
 
-def dibujar_nodos(ax, G, posiciones):
-    tamaño_nodos = 200
-    nx.draw_networkx_nodes(
-        G, posiciones, nodelist=list(G.nodes),
-        node_shape="o", node_color="lightblue", node_size=tamaño_nodos,
-        edgecolors="black"
+def dibujar_etiquetas_nodos(ax, G, posiciones):
+    labels = {int(n): str(int(n)) for n in G.nodes()}
+    nx.draw_networkx_labels(
+        G,
+        posiciones,
+        labels=labels,
+        font_size=10,
+        font_color="black",
+        ax=ax,
     )
-
 
 
 def dibujar_acometidas(ax, posiciones: dict, df_conexiones):
@@ -167,15 +169,15 @@ def dibujar_acometidas(ax, posiciones: dict, df_conexiones):
 
 
 def dibujar_distancias_tramos(ax, G: nx.Graph, posiciones: dict):
-    """
-    Etiqueta distancia cerca del punto medio (simple y estable).
-    """
     for u, v, d in G.edges(data=True):
+        dist = float(d.get("distancia", 0.0))
+        if dist <= 0:
+            continue
         x1, y1 = posiciones[u]
         x2, y2 = posiciones[v]
         xm, ym = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-        dist = d.get("distancia", "")
         ax.text(xm, ym + 0.15, f"{dist} m", fontsize=11, color="red", ha="center")
+
 
 
 def dibujar_transformador_a_lado(ax, posiciones, capacidad_transformador, nodo=1, dx=-1.2, dy=0.0):
@@ -215,8 +217,8 @@ def crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias, capacid
     ax = plt.gca()
 
     # Orden de dibujo (equivalente a zorder, pero compatible)
-    dibujar_nodos(ax, G, posiciones) 
-    dibujar_aristas(ax, G, posiciones)           
+    dibujar_aristas(ax, G, posiciones)
+    dibujar_nodos(ax, G, posiciones)
     dibujar_etiquetas_nodos(ax, G, posiciones)
     dibujar_acometidas(ax, posiciones, df_conexiones)
     dibujar_distancias_tramos(ax, G, posiciones)
@@ -267,6 +269,7 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones,
     )
+
 
 
 
