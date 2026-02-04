@@ -75,34 +75,45 @@ def calcular_posiciones_red(G, nodo_raiz=1, escala=None, dy=1.5):
 # Funciones de Dibujo
 # ============================================================
 
-def dibujar_nodos_transformador(ax, G, posiciones, capacidad_transformador):
-    tamaño_transformador = 400
-    nx.draw_networkx_nodes(
-        G, posiciones, nodelist=[1],
-        node_shape="^", node_color="orange",
-        node_size=tamaño_transformador, label="Transformador (Nodo 1)"
-    )
-    x, y = posiciones[1]
-    etiqueta = f"Transformador\n{capacidad_transformador} kVA"
+def dibujar_simbolo_transformador(ax, posiciones, capacidad_transformador, nodo_raiz=1):
+    """
+    Dibuja el símbolo del transformador a la par del nodo 1 (no reemplaza el nodo).
+    """
+    if nodo_raiz not in posiciones:
+        return
+
+    x, y = posiciones[nodo_raiz]
+
+    # Offset hacia la izquierda del nodo 1 (ajustable)
+    dx = 0.8
+    dy = 0.0
+
+    xt, yt = x - dx, y + dy
+
+    # símbolo discreto (triángulo negro)
+    ax.scatter([xt], [yt], marker="^", s=160, c="orange", edgecolors="black", zorder=5)
+
+    # texto a la izquierda del símbolo
     ax.text(
-        x - 1, y, etiqueta, fontsize=9, ha="center", color="black",
-        bbox=dict(facecolor="white", alpha=0.6, edgecolor="none")
+        xt - 0.2, yt,
+        f"Transformador\n{float(capacidad_transformador):.0f} kVA",
+        fontsize=9, ha="right", va="center", color="black"
     )
 
 
 def dibujar_nodos_generales(ax, G, posiciones):
     tamaño_nodos = 200
-    otros_nodos = [n for n in G.nodes if n != 1]
+    # ✅ incluir también el nodo 1 como nodo normal
     nx.draw_networkx_nodes(
-        G, posiciones, nodelist=otros_nodos,
-        node_shape="o", node_color="lightblue", node_size=tamaño_nodos
+        G, posiciones, nodelist=list(G.nodes),
+        node_shape="o", node_color="lightblue", node_size=tamaño_nodos,
+        edgecolors="black", linewidths=1.0
     )
 
 
-def dibujar_aristas(ax, G, posiciones, nodo_raiz=1, stub=0.35):
+def dibujar_aristas(ax, G, posiciones):
     """
-    Dibuja aristas con codos ortogonales (L) y agrega un 'stub' corto
-    para que la línea conecte visualmente con el símbolo del transformador.
+    Aristas ortogonales (sin diagonales), sin stub.
     """
     for (u, v, d) in G.edges(data=True):
         if u == v:
@@ -111,29 +122,9 @@ def dibujar_aristas(ax, G, posiciones, nodo_raiz=1, stub=0.35):
         x1, y1 = posiciones[u]
         x2, y2 = posiciones[v]
 
-        # --- Si participa el nodo raíz, crear punto de salida/entrada (stub) ---
-        if u == nodo_raiz:
-            # punto de salida desde raíz hacia la dirección del otro nodo (en x)
-            sx = x1 + (stub if x2 >= x1 else -stub)
-            sy = y1
-            # dibuja el stub (conecta con el triángulo)
-            ax.plot([x1, sx], [y1, sy], color="black", linewidth=2)
-            # ahora la arista sale desde (sx,sy)
-            x1, y1 = sx, sy
-
-        elif v == nodo_raiz:
-            # punto de entrada hacia raíz (stub)
-            tx = x2 + (stub if x1 >= x2 else -stub)
-            ty = y2
-            ax.plot([x2, tx], [y2, ty], color="black", linewidth=2)
-            x2, y2 = tx, ty
-
-        # --- Codo ortogonal: H luego V ---
-        cx, cy = x2, y1
-
-        # dibujar dos segmentos (sin diagonales)
-        ax.plot([x1, cx], [y1, cy], color="black", linewidth=2)
-        ax.plot([cx, x2], [cy, y2], color="black", linewidth=2)
+        # Codo H->V
+        ax.plot([x1, x2], [y1, y1], color="black", linewidth=2, zorder=1)
+        ax.plot([x2, x2], [y1, y2], color="black", linewidth=2, zorder=1)
 
 
 
@@ -194,12 +185,13 @@ def crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias,
 
     plt.figure(figsize=(10, 6))
     ax = plt.gca()
-    dibujar_nodos_transformador(ax, G, posiciones, capacidad_transformador)
     dibujar_nodos_generales(ax, G, posiciones)
-    dibujar_aristas(ax, G, posiciones, nodo_raiz=1, stub=0.35)
+    dibujar_aristas(ax, G, posiciones)
     dibujar_etiquetas_nodos(ax, G, posiciones)
     dibujar_acometidas(ax, posiciones, df_conexiones)
     dibujar_distancias_tramos(ax, G, posiciones)
+    dibujar_simbolo_transformador(ax, posiciones, capacidad_transformador, nodo_raiz=1)
+
 
     plt.title("Diagrama de Nodos del Transformador")
     plt.axis("off")
@@ -231,6 +223,7 @@ def crear_grafico_nodos_desde_archivo(ruta_excel):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones
     )
+
 
 
 
