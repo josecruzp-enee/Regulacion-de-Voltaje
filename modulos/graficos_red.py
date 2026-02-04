@@ -2,10 +2,10 @@
 """
 modulos/graficos_red.py
 
-Funciones para visualización de la red eléctrica y generación de diagramas
-usando NetworkX + Matplotlib.
-- Nodo 1 se dibuja igual que los demás (círculo).
-- El transformador se dibuja a la par del nodo 1 (triángulo aparte).
+Diagrama de red estilo plano:
+- Nodos como círculos iguales (incluye nodo 1).
+- Aristas ortogonales (L) recortadas para que NO atraviesen los nodos.
+- Transformador como triángulo A LA PAR del nodo 1, con conexión corta recortada.
 """
 
 from __future__ import annotations
@@ -61,7 +61,12 @@ def verificar_grafo(G: nx.Graph, nodo_raiz: int = 1) -> dict:
 # Cálculo de posiciones
 # -----------------------------
 
-def calcular_posiciones_red(G: nx.Graph, nodo_raiz: int = 1, escala=None, dy: float = 1.5) -> dict:
+def calcular_posiciones_red(
+    G: nx.Graph,
+    nodo_raiz: int = 1,
+    escala=None,
+    dy: float = 1.5,
+) -> dict:
     """
     Disposición horizontal principal con ramificaciones verticales (DFS).
     """
@@ -90,25 +95,75 @@ def calcular_posiciones_red(G: nx.Graph, nodo_raiz: int = 1, escala=None, dy: fl
 
 
 # -----------------------------
+# Utilidades geométricas
+# -----------------------------
+
+def _dist(a, b) -> float:
+    dx = b[0] - a[0]
+    dy = b[1] - a[1]
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def _trim_segment(a, b, cut_a: float = 0.0, cut_b: float = 0.0):
+    """
+    Recorta un segmento a->b:
+    - cut_a: cuánto recortar desde 'a' hacia 'b'
+    - cut_b: cuánto recortar desde 'b' hacia 'a'
+    """
+    L = _dist(a, b)
+    if L < 1e-9:
+        return a, b
+    ux = (b[0] - a[0]) / L
+    uy = (b[1] - a[1]) / L
+    a2 = (a[0] + ux * cut_a, a[1] + uy * cut_a)
+    b2 = (b[0] - ux * cut_b, b[1] - uy * cut_b)
+    return a2, b2
+
+
+def _draw_L_path(ax, a, b, cut_start: float, cut_end: float, lw: float = 2.0):
+    """
+    Dibuja una conexión ortogonal tipo 'L' entre a (x1,y1) y b (x2,y2),
+    recortando cerca del nodo de inicio y del nodo final para no atravesar círculos.
+
+    Estrategia:
+    - tramo1: a -> (x2, y1)
+    - tramo2: (x2, y1) -> b
+    - recorte se aplica SOLO cerca de a y cerca de b (no en el codo).
+    """
+    x1, y1 = a
+    x2, y2 = b
+    codo = (x2, y1)
+
+    # Si queda degenerado (misma x o misma y), es segmento recto: recortamos simple.
+    if abs(x1 - x2) < 1e-9 or abs(y1 - y2) < 1e-9:
+        aa, bb = _trim_segment(a, b, cut_a=cut_start, cut_b=cut_end)
+        ax.plot([aa[0], bb[0]], [aa[1], bb[1]], color="black", linewidth=lw)
+        return
+
+    # Tramo A->CODO (recorta en A)
+    aa1, bb1 = _trim_segment(a, codo, cut_a=cut_start, cut_b=0.0)
+    ax.plot([aa1[0], bb1[0]], [aa1[1], bb1[1]], color="black", linewidth=lw)
+
+    # Tramo CODO->B (recorta en B)
+    aa2, bb2 = _trim_segment(codo, b, cut_a=0.0, cut_b=cut_end)
+    ax.plot([aa2[0], bb2[0]], [aa2[1], bb2[1]], color="black", linewidth=lw)
+
+
+# -----------------------------
 # Dibujo
 # -----------------------------
 
-def dibujar_aristas(ax, G: nx.Graph, posiciones: dict):
+def dibujar_aristas(ax, G: nx.Graph, posiciones: dict, recorte_nodo: float = 0.16):
     """
-    Aristas ortogonales (L) SIN stubs.
+    Aristas ortogonales (L) recortadas para que NO entren al centro del nodo.
     """
     for u, v in G.edges():
-        x1, y1 = posiciones[u]
-        x2, y2 = posiciones[v]
-        cx, cy = x2, y1
-        ax.plot([x1, cx], [y1, cy], color="black", linewidth=2)
-        ax.plot([cx, x2], [cy, y2], color="black", linewidth=2)
+        a = posiciones[u]
+        b = posiciones[v]
+        _draw_L_path(ax, a, b, cut_start=recorte_nodo, cut_end=recorte_nodo, lw=2.0)
 
 
 def dibujar_nodos(ax, G: nx.Graph, posiciones: dict):
-    """
-    IMPORTANTE: NO pasar zorder aquí (NetworkX puede no soportarlo).
-    """
     nx.draw_networkx_nodes(
         G,
         posiciones,
@@ -131,18 +186,23 @@ def dibujar_etiquetas_nodos(ax, G: nx.Graph, posiciones: dict):
     )
 
 
-def dibujar_acometidas(ax, posiciones: dict, df_conexiones):
+def dibujar_acometidas(ax, posiciones: dict, df_conexiones, omitir_nodos: set[int] | None = None):
     """
     Dibuja línea punteada y texto 'Usuarios' bajo cada nodo_final.
     df_conexiones debe tener: nodo_final, usuarios (y opcional usuarios_especiales)
     """
+    omitir_nodos = omitir_nodos or set()
+
     for _, row in df_conexiones.iterrows():
         nf = int(row["nodo_final"])
-        normales = int(row["usuarios"])
-        especiales = int(row.get("usuarios_especiales", 0))
 
+        if nf in omitir_nodos:
+            continue
         if nf not in posiciones:
             continue
+
+        normales = int(row.get("usuarios", 0))
+        especiales = int(row.get("usuarios_especiales", 0) or 0)
 
         x, y = posiciones[nf]
         y2 = y - 0.25
@@ -171,7 +231,8 @@ def dibujar_acometidas(ax, posiciones: dict, df_conexiones):
 
 def dibujar_distancias_tramos(ax, G: nx.Graph, posiciones: dict):
     """
-    Etiqueta distancia cerca del punto medio (simple y estable).
+    Etiqueta distancia cerca del punto medio del segmento visual (simple).
+    Nota: como la arista es en L, usamos el promedio de extremos para ubicar texto.
     """
     for u, v, d in G.edges(data=True):
         x1, y1 = posiciones[u]
@@ -181,15 +242,31 @@ def dibujar_distancias_tramos(ax, G: nx.Graph, posiciones: dict):
         ax.text(xm, ym + 0.15, f"{dist} m", fontsize=11, color="red", ha="center")
 
 
-def dibujar_transformador_a_lado(ax, posiciones: dict, capacidad_transformador, nodo: int = 1, dx: float = -0.9, dy: float = 0.0):
+def dibujar_transformador_a_lado(
+    ax,
+    posiciones: dict,
+    capacidad_transformador,
+    nodo: int = 1,
+    dx: float = -0.9,
+    dy: float = 0.0,
+    conectar: bool = True,
+    recorte: float = 0.16,
+):
     """
-    Dibuja el símbolo del transformador A LA PAR del nodo (triángulo aparte).
+    Dibuja el símbolo del transformador A LA PAR del nodo (triángulo aparte)
+    y lo conecta con una línea corta recortada para que no atraviese el nodo/triángulo.
     """
     if nodo not in posiciones:
         return
 
     x, y = posiciones[nodo]
     xt, yt = x + dx, y + dy
+
+    if conectar:
+        a = (x, y)
+        b = (xt, yt)
+        a2, b2 = _trim_segment(a, b, cut_a=recorte, cut_b=recorte)
+        ax.plot([a2[0], b2[0]], [a2[1], b2[1]], color="black", linewidth=2)
 
     ax.scatter([xt], [yt], marker="^", s=260, c="orange", edgecolors="black")
 
@@ -208,29 +285,56 @@ def dibujar_transformador_a_lado(ax, posiciones: dict, capacidad_transformador, 
 # Salida principal (ReportLab Image)
 # -----------------------------
 
-def crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias, capacidad_transformador, df_conexiones):
+def crear_grafico_nodos(
+    nodos_inicio,
+    nodos_final,
+    usuarios,
+    distancias,
+    capacidad_transformador,
+    df_conexiones,
+):
     """
     Devuelve reportlab.platypus.Image listo para meter en PDF.
     """
+    # Entradas
     G = crear_grafo(nodos_inicio, nodos_final, usuarios, distancias)
 
-    # Debug opcional (no rompe nada)
+    # Validación (no rompe, solo avisa)
     info = verificar_grafo(G, nodo_raiz=1)
     if not info.get("ok", True):
         print("⚠️ Grafo no completamente conectado:", info)
 
+    # Cálculos
     posiciones = calcular_posiciones_red(G, nodo_raiz=1)
 
+    # Salidas (dibujo)
     fig = plt.figure(figsize=(10, 6))
     ax = plt.gca()
 
-    # Orden de dibujo (equivalente a zorder, pero compatible)
-    dibujar_aristas(ax, G, posiciones)
+    # RADIO VIRTUAL del nodo (en coords del layout)
+    # Si querés más “estilo AutoCAD” (punto más grande), subilo a 0.18–0.22
+    RECORTE_NODO = 0.16
+
+    # Orden de dibujo
+    dibujar_aristas(ax, G, posiciones, recorte_nodo=RECORTE_NODO)
     dibujar_nodos(ax, G, posiciones)
     dibujar_etiquetas_nodos(ax, G, posiciones)
-    dibujar_acometidas(ax, posiciones, df_conexiones)
+
+    # Si NO querés acometida en el nodo 1 (por el TS), dejalo omitido:
+    dibujar_acometidas(ax, posiciones, df_conexiones, omitir_nodos={1})
+
     dibujar_distancias_tramos(ax, G, posiciones)
-    dibujar_transformador_a_lado(ax, posiciones, capacidad_transformador, nodo=1)
+
+    dibujar_transformador_a_lado(
+        ax,
+        posiciones,
+        capacidad_transformador,
+        nodo=1,
+        dx=-0.9,
+        dy=0.0,
+        conectar=True,
+        recorte=RECORTE_NODO,
+    )
 
     plt.title("Diagrama de Nodos del Transformador")
     plt.axis("off")
