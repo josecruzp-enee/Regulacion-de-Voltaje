@@ -219,7 +219,7 @@ def crear_grafico_nodos(nodos_inicio, nodos_final, usuarios, distancias, capacid
     ax = plt.gca()
 
     # Orden de dibujo (equivalente a zorder, pero compatible)
-    dibujar_nodos_generales(ax, G, posiciones) 
+    dibujar_nodos(ax, G, posiciones) 
     dibujar_aristas(ax, G, posiciones)           
     dibujar_etiquetas_nodos(ax, G, posiciones)
     dibujar_acometidas(ax, posiciones, df_conexiones)
@@ -271,5 +271,6 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones,
     )
+
 
 
