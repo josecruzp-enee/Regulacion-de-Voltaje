@@ -104,8 +104,9 @@ def dibujar_nodos(ax, G, posiciones):
         node_size=220,
         node_color="lightblue",
         edgecolors="black",
-        zorder=3
+        ax=ax
     )
+)
 
 
 def dibujar_aristas(ax, G, posiciones):
@@ -128,7 +129,7 @@ def dibujar_etiquetas_nodos(ax, G, posiciones):
         labels={n: str(n) for n in G.nodes},
         font_size=12,
         font_weight="bold",
-        zorder=4
+        ax=ax
     )
 
 
@@ -304,3 +305,4 @@ def crear_grafico_nodos_desde_archivo(ruta_excel):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones
     )
+
