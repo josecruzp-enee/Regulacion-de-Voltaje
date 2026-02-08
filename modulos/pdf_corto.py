@@ -343,7 +343,8 @@ def obtener_datos_para_pdf_corto(ruta_excel):
         "grafico_nodos": crear_grafico_nodos(
             datos["nodos_inicio"], datos["nodos_final"],
             datos["usuarios"], datos["distancias"],
-            datos["capacidad_transformador"], df_conexiones
+            datos["capacidad_transformador"], df_conexiones,
+            tabla_potencia=df_conexiones,
         ),
     }
 
@@ -351,6 +352,7 @@ def obtener_datos_para_pdf_corto(ruta_excel):
 if __name__ == "__main__":
     ruta_excel = os.path.join(os.path.dirname(__file__), "datos_red_secundaria.xlsx")
     generar_pdf_corto(ruta_excel)
+
 
 
 
