@@ -81,36 +81,28 @@ def calcular_corrientes(df: pd.DataFrame, V: np.ndarray, V_base: float = 240.0) 
 # - perdida_total: pérdidas totales anuales en kWh
 # - proyeccion: lista con proyección de pérdidas para 15 años (crecimiento anual 2%)
 def calcular_perdidas_y_proyeccion(df, LF=0.4, crecimiento=0.02):
-    """
-    Pérdidas de línea (I^2*R) con R de lazo ya incluida en 'resistencia_vano'.
-    Annualiza con k = 0.2*LF + 0.8*LF^2 (LF por norma = 0.4 -> k=0.208).
-    """
     P_perdidas = []
     for _, row in df.iterrows():
-        I = row['I_vano']                      # A (compleja o real)
-        R_loop = float(row['resistencia_vano'].real)  # Ω (YA es de lazo)
-        P_perdida = (abs(I) ** 2) * R_loop     # W por tramo
-        P_perdidas.append(float(P_perdida))
+        I = row["I_vano"]
+        R_loop = float(row["resistencia_vano"].real)  # Ω lazo
+        P_perdidas.append(float((abs(I) ** 2) * R_loop))  # W
 
     df = df.copy()
-    df['P_perdida'] = P_perdidas
+    df["P_perdida"] = P_perdidas
 
-    # Potencia pérdidas a condición de cálculo (W)
-    P_perdida_total = sum(P_perdidas)
+    P_peak_w = sum(P_perdidas)  # asumimos que I corresponde a pico
+    k = 0.2 * LF + 0.8 * (LF ** 2)
 
-    # Loss factor k desde LF fijo de la norma
-    k = 0.2 * LF + 0.8 * (LF ** 2)  # con LF=0.4 -> k=0.208
+    perdida_anual_kwh = P_peak_w * 8760 * k / 1000.0
 
-    # Energía anual (kWh/año)
-    perdida_total = P_perdida_total * 8760 * k / 1000.0
+    # ✅ pérdidas crecen ~ (1+g)^(2i)
+    proyeccion = [perdida_anual_kwh * ((1 + crecimiento) ** (2 * i)) for i in range(0, 15)]
 
-    # Proyección (crecimiento anual)
-    proyeccion = [perdida_total * ((1 + crecimiento) ** i) for i in range(0, 15)]
-
-    return df, perdida_total, proyeccion
+    return df, perdida_anual_kwh, proyeccion
 
 
 
 
 
     
+
