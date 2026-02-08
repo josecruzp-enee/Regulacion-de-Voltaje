@@ -31,73 +31,83 @@ except Exception:
     cargar_datos_circuito = None
 
 def _bboxes_overlap(a, b) -> bool:
-    # a, b = (x0, y0, x1, y1) en coords de display (pixeles)
+    # a, b = (x0, y0, x1, y1) en coords display (pixeles)
     return not (a[2] <= b[0] or a[0] >= b[2] or a[3] <= b[1] or a[1] >= b[3])
 
 
-def colocar_etiquetas_sin_solape(
+def colocar_etiquetas_sin_solape_px(
     ax,
     labels,
-    max_levels: int = 20,
-    dy_step_data: float = 0.22,
+    step_px: int = 18,
+    max_steps: int = 40,
     prefer_down: bool = True,
 ):
     """
-    Coloca etiquetas evitando solapes midiendo bboxes reales.
-
-    labels: lista de dicts:
-      {
-        "x": float, "y": float,
-        "text": str,
-        "kwargs": dict  (kwargs para ax.text)
-      }
-
-    Estrategia: intenta niveles 0..max_levels moviendo en Y.
+    Coloca etiquetas evitando solapes moviendo en PIXELES.
+    labels: lista de dicts {"x","y","text","kwargs"} (x,y en data coords).
     """
     fig = ax.figure
+    fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
 
-    placed_bboxes = []
+    placed = []
 
-    # Forzamos un draw para que haya renderer listo (crítico)
-    fig.canvas.draw()
+    # transform helpers
+    to_disp = ax.transData.transform
+    to_data = ax.transData.inverted().transform
 
     for lab in labels:
-        x = lab["x"]
-        y0 = lab["y"]
+        x0, y0 = float(lab["x"]), float(lab["y"])
         text = lab["text"]
         kwargs = dict(lab.get("kwargs", {}))
 
-        # intentos por niveles
-        chosen_artist = None
-        chosen_bbox = None
+        # punto base en display
+        xd0, yd0 = to_disp((x0, y0))
 
-        for level in range(max_levels + 1):
-            dy = (level * dy_step_data) * (-1 if prefer_down else +1)
-            y = y0 + dy
+        chosen_artist = None
+        chosen_bb = None
+
+        for k in range(max_steps + 1):
+            # mover en pixeles
+            dy_px = k * step_px * (-1 if prefer_down else +1)
+
+            # (opcional) si baja demasiado, alterna un poquito a los lados
+            dx_px = 0
+            if k >= 10:
+                # zigzag lateral pequeño para romper columnas apretadas
+                dx_px = ((k - 9) * (step_px // 2)) * (1 if (k % 2 == 0) else -1)
+
+            xd = xd0 + dx_px
+            yd = yd0 + dy_px
+
+            # volver a data coords
+            x, y = to_data((xd, yd))
 
             artist = ax.text(x, y, text, **kwargs)
             fig.canvas.draw()
-            bbox = artist.get_window_extent(renderer=renderer).expanded(1.02, 1.08)
+
+            bbox = artist.get_window_extent(renderer=renderer).expanded(1.04, 1.10)
             bb = (bbox.x0, bbox.y0, bbox.x1, bbox.y1)
 
-            if not any(_bboxes_overlap(bb, pb) for pb in placed_bboxes):
+            if not any(_bboxes_overlap(bb, pb) for pb in placed):
                 chosen_artist = artist
-                chosen_bbox = bb
+                chosen_bb = bb
                 break
 
-            # si colisiona, borramos y probamos otro nivel
             artist.remove()
 
-        # si no encontramos hueco, lo dejamos en el último nivel (sin borrar)
         if chosen_artist is None:
-            y = y0 + ((max_levels * dy_step_data) * (-1 if prefer_down else +1))
+            # último recurso: lo dejamos en la última posición
+            xd = xd0
+            yd = yd0 + (max_steps * step_px * (-1 if prefer_down else +1))
+            x, y = to_data((xd, yd))
             chosen_artist = ax.text(x, y, text, **kwargs)
             fig.canvas.draw()
-            bbox = chosen_artist.get_window_extent(renderer=renderer).expanded(1.02, 1.08)
-            chosen_bbox = (bbox.x0, bbox.y0, bbox.x1, bbox.y1)
+            bbox = chosen_artist.get_window_extent(renderer=renderer).expanded(1.04, 1.10)
+            chosen_bb = (bbox.x0, bbox.y0, bbox.x1, bbox.y1)
 
-        placed_bboxes.append(chosen_bbox)
+        placed.append(chosen_bb)
+
 
 # ============================================================
 # Entradas / Normalización
@@ -439,18 +449,13 @@ def draw_users(
     kva_por_nodo: dict[int, float] | None = None,
 ):
     """
-    Dibuja usuarios + (opcional) demanda kVA por nodo SIN solapes.
-    Estrategia robusta:
-      - Junta todas las etiquetas como 'labels'
-      - Las coloca midiendo el bbox real (renderer) para evitar superposición
+    Usuarios + (opcional) Demanda kVA SIN solapes (colocación en pixeles).
     """
-    # geometría base de "línea punteada" bajo el nodo
     y_linea = 0.25
     y_text = 0.08
 
     labels = []
 
-    # 1) Recolectar etiquetas (NO dibujar texto todavía)
     for n in sorted(usuarios_por_nodo.keys()):
         if n not in nodos_reales or n not in pos:
             continue
@@ -461,12 +466,11 @@ def draw_users(
             continue
 
         x, y = pos[n]
-
-        # línea punteada fija (esto no genera solape)
         y2 = y - y_linea
+
+        # línea punteada fija
         ax.plot([x, x], [y, y2], "--", color="gray", linewidth=1)
 
-        # kVA opcional
         kva = None
         if isinstance(kva_por_nodo, dict) and n in kva_por_nodo:
             kva = float(kva_por_nodo[n])
@@ -475,7 +479,6 @@ def draw_users(
         if kva is not None and kva > 0:
             texto += f"\nDemanda: {kva:.1f} kVA"
 
-        # etiqueta principal (azul)
         labels.append({
             "x": x,
             "y": (y2 - y_text),
@@ -486,14 +489,13 @@ def draw_users(
                 ha="center",
                 va="top",
                 bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1.2),
-            )
+            ),
         })
 
-        # etiqueta de especiales (roja), si aplica
         if ue > 0:
             labels.append({
                 "x": x,
-                "y": (y2 - y_text - 0.40),  # un poco más abajo que la principal
+                "y": (y2 - y_text - 0.40),
                 "text": f"Especiales: {ue}",
                 "kwargs": dict(
                     fontsize=11,
@@ -501,18 +503,18 @@ def draw_users(
                     ha="center",
                     va="top",
                     bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1.2),
-                )
+                ),
             })
 
-    # 2) Colocar etiquetas evitando solapes (ajusta en Y por niveles)
-    # dy_step_data controla cuánto baja cada intento. Subilo si querés más separación.
-    colocar_etiquetas_sin_solape(
+    # colocación robusta (pixeles)
+    colocar_etiquetas_sin_solape_px(
         ax,
         labels,
-        max_levels=25,
-        dy_step_data=0.22,
+        step_px=18,
+        max_steps=50,
         prefer_down=True,
     )
+
 
 
 
@@ -638,6 +640,7 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         nodo_raiz=1,
         tabla_potencia=df_conexiones,
     )
+
 
 
 
