@@ -402,7 +402,7 @@ def dibujar_acometidas(ax, posiciones: dict, df_conexiones, nodos_reales: set[in
     x_stagger = 0.22      # zig-zag opcional para nodos muy pegados en X
 
     df = df_conexiones.copy()
-
+    df = df[df["nodo_inicial"].astype(int) != df["nodo_final"].astype(int)].copy()
     if "usuarios_especiales" not in df.columns:
         df["usuarios_especiales"] = 0
 
@@ -620,5 +620,6 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones,
     )
+
 
 
