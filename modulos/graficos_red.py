@@ -30,29 +30,25 @@ try:
 except Exception:
     cargar_datos_circuito = None
 
+
+# ============================================================
+# Utilidades: etiquetas sin solape (en pixeles)
+# ============================================================
+
 def _bboxes_overlap(a, b) -> bool:
-    # a, b = (x0, y0, x1, y1) en coords display (pixeles)
     return not (a[2] <= b[0] or a[0] >= b[2] or a[3] <= b[1] or a[1] >= b[3])
 
 
-def colocar_etiquetas_sin_solape_px(
-    ax,
-    labels,
-    step_px: int = 18,
-    max_steps: int = 40,
-    prefer_down: bool = True,
-):
+def colocar_etiquetas_sin_solape_px(ax, labels, step_px: int = 18, max_steps: int = 40, prefer_down: bool = True):
     """
-    Coloca etiquetas evitando solapes moviendo en PIXELES.
     labels: lista de dicts {"x","y","text","kwargs"} (x,y en data coords).
+    Mueve en pixeles, evita solapes por bbox.
     """
     fig = ax.figure
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
 
     placed = []
-
-    # transform helpers
     to_disp = ax.transData.transform
     to_data = ax.transData.inverted().transform
 
@@ -61,46 +57,31 @@ def colocar_etiquetas_sin_solape_px(
         text = lab["text"]
         kwargs = dict(lab.get("kwargs", {}))
 
-        # punto base en display
         xd0, yd0 = to_disp((x0, y0))
-
-        chosen_artist = None
         chosen_bb = None
+        chosen_artist = None
 
         for k in range(max_steps + 1):
-            # mover en pixeles
             dy_px = k * step_px * (-1 if prefer_down else +1)
-
-            # (opcional) si baja demasiado, alterna un poquito a los lados
             dx_px = 0
             if k >= 10:
-                # zigzag lateral pequeño para romper columnas apretadas
                 dx_px = ((k - 9) * (step_px // 2)) * (1 if (k % 2 == 0) else -1)
 
-            xd = xd0 + dx_px
-            yd = yd0 + dy_px
-
-            # volver a data coords
-            x, y = to_data((xd, yd))
-
+            x, y = to_data((xd0 + dx_px, yd0 + dy_px))
             artist = ax.text(x, y, text, **kwargs)
-            fig.canvas.draw()
 
+            fig.canvas.draw()
             bbox = artist.get_window_extent(renderer=renderer).expanded(1.04, 1.10)
             bb = (bbox.x0, bbox.y0, bbox.x1, bbox.y1)
 
             if not any(_bboxes_overlap(bb, pb) for pb in placed):
-                chosen_artist = artist
-                chosen_bb = bb
+                chosen_artist, chosen_bb = artist, bb
                 break
 
             artist.remove()
 
         if chosen_artist is None:
-            # último recurso: lo dejamos en la última posición
-            xd = xd0
-            yd = yd0 + (max_steps * step_px * (-1 if prefer_down else +1))
-            x, y = to_data((xd, yd))
+            x, y = to_data((xd0, yd0 + (max_steps * step_px * (-1 if prefer_down else +1))))
             chosen_artist = ax.text(x, y, text, **kwargs)
             fig.canvas.draw()
             bbox = chosen_artist.get_window_extent(renderer=renderer).expanded(1.04, 1.10)
@@ -110,18 +91,13 @@ def colocar_etiquetas_sin_solape_px(
 
 
 # ============================================================
-# Entradas / Normalización
+# Normalización / Entradas
 # ============================================================
 
 def calcular_kva_por_nodo_desde_tabla(tabla_potencia) -> dict[int, float]:
-    """
-    Suma kVA por nodo_final desde la tabla de cargas (cargas.py).
-    Usa 'kva_total' si existe; si no, usa 'kva'.
-    """
     import pandas as pd
 
     df = tabla_potencia.copy()
-
     if "nodo_final" not in df.columns:
         raise ValueError("tabla_potencia debe incluir 'nodo_final'.")
 
@@ -131,54 +107,37 @@ def calcular_kva_por_nodo_desde_tabla(tabla_potencia) -> dict[int, float]:
 
     df["nodo_final"] = pd.to_numeric(df["nodo_final"], errors="coerce").fillna(0).astype(int)
     df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0).astype(float)
+    out = df.groupby("nodo_final")[col].sum().to_dict()
+    return {int(k): float(v) for k, v in out.items()}
 
-    kva_por_nodo = df.groupby("nodo_final")[col].sum().to_dict()
-    return {int(k): float(v) for k, v in kva_por_nodo.items()}
 
 def separar_tramos_y_usuarios(df_conexiones):
     """
     Devuelve:
       - df_tramos: filas ni!=nf, con distancia
-      - usuarios_por_nodo: dict[int,int confirmados] (incluye ni==nf y también suma usuarios de acometidas)
-    Nota:
-      En tus datos, 'usuarios' representa la acometida asociada a nodo_final.
-      Y cuando ni==nf, lo interpretamos como usuarios "en ese nodo".
+      - usuarios_por_nodo: dict[n] = {"usuarios":..., "usuarios_especiales":...}
     """
     import pandas as pd
 
     df = df_conexiones.copy()
-
-    # Normaliza tipos
     for c in ("nodo_inicial", "nodo_final"):
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int)
 
-    if "usuarios" not in df.columns:
-        df["usuarios"] = 0
-    df["usuarios"] = pd.to_numeric(df["usuarios"], errors="coerce").fillna(0).astype(int)
-
-    if "usuarios_especiales" not in df.columns:
-        df["usuarios_especiales"] = 0
-    df["usuarios_especiales"] = pd.to_numeric(df["usuarios_especiales"], errors="coerce").fillna(0).astype(int)
+    for c in ("usuarios", "usuarios_especiales"):
+        if c not in df.columns:
+            df[c] = 0
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int)
 
     if "distancia" not in df.columns:
         df["distancia"] = 0.0
     df["distancia"] = pd.to_numeric(df["distancia"], errors="coerce").fillna(0.0).astype(float)
 
-    # 1) Usuarios en nodo (ni==nf)
-    df_nodo = df[df["nodo_inicial"] == df["nodo_final"]].copy()
-    usuarios_nodo = (
-        df_nodo.groupby("nodo_final")[["usuarios", "usuarios_especiales"]].sum()
-    )
+    df_nodo = df[df["nodo_inicial"] == df["nodo_final"]]
+    df_tramos = df[df["nodo_inicial"] != df["nodo_final"]]
 
-    # 2) Tramos reales
-    df_tramos = df[df["nodo_inicial"] != df["nodo_final"]].copy()
+    usuarios_nodo = df_nodo.groupby("nodo_final")[["usuarios", "usuarios_especiales"]].sum()
+    usuarios_acom = df_tramos.groupby("nodo_final")[["usuarios", "usuarios_especiales"]].sum()
 
-    # 3) Acometidas (usuarios por nodo_final en tramos)
-    usuarios_acom = (
-        df_tramos.groupby("nodo_final")[["usuarios", "usuarios_especiales"]].sum()
-    )
-
-    # 4) Merge final usuarios_por_nodo
     usuarios_por_nodo = {}
     all_nodes = set(usuarios_nodo.index.tolist()) | set(usuarios_acom.index.tolist())
     for n in all_nodes:
@@ -186,47 +145,34 @@ def separar_tramos_y_usuarios(df_conexiones):
         ue = int(usuarios_nodo.loc[n, "usuarios_especiales"]) if n in usuarios_nodo.index else 0
         ua = int(usuarios_acom.loc[n, "usuarios"]) if n in usuarios_acom.index else 0
         uea = int(usuarios_acom.loc[n, "usuarios_especiales"]) if n in usuarios_acom.index else 0
-        usuarios_por_nodo[int(n)] = {
-            "usuarios": u + ua,
-            "usuarios_especiales": ue + uea,
-        }
+        usuarios_por_nodo[int(n)] = {"usuarios": u + ua, "usuarios_especiales": ue + uea}
 
     return df_tramos, usuarios_por_nodo
 
 
 def construir_grafo_desde_tramos(df_tramos) -> nx.Graph:
-    """
-    Grafo solo con tramos reales (ni!=nf).
-    """
     G = nx.Graph()
     for _, r in df_tramos.iterrows():
         ni = int(r["nodo_inicial"])
         nf = int(r["nodo_final"])
         d = float(r.get("distancia", 0.0) or 0.0)
-        G.add_node(ni)
-        G.add_node(nf)
-        # Si hay duplicado, nos quedamos con la mayor distancia (o la última)
         G.add_edge(ni, nf, distancia=d)
     return G
 
 
 def verificar_grafo(G: nx.Graph, nodo_raiz: int = 1) -> None:
-    if nodo_raiz not in G and G.number_of_nodes() > 0:
-        raise ValueError(f"Nodo raíz {nodo_raiz} no existe en el grafo.")
     if G.number_of_nodes() == 0:
         raise ValueError("Grafo vacío: no hay tramos.")
+    if nodo_raiz not in G:
+        raise ValueError(f"Nodo raíz {nodo_raiz} no existe en el grafo.")
 
 
 # ============================================================
-# Layout (serpiente U/C + ramas)
+# Layout (serpiente + ramas)
 # ============================================================
 
-def es_arbol_radial(G: nx.Graph, root: int) -> bool:
-    if G.number_of_edges() == 0:
-        return True
-    if not nx.is_connected(G):
-        return False
-    return G.number_of_edges() == G.number_of_nodes() - 1
+def es_arbol_radial(G: nx.Graph) -> bool:
+    return (G.number_of_edges() == 0) or (nx.is_connected(G) and G.number_of_edges() == G.number_of_nodes() - 1)
 
 
 def camino_troncal_mas_largo(G: nx.Graph, root: int) -> list[int]:
@@ -261,15 +207,14 @@ def layout_serpiente(G: nx.Graph, root: int = 1, ancho: float = 3.6, salto: floa
       nodos_reales: set[int]
     """
     nodos_reales = set(G.nodes())
-    if G.number_of_nodes() == 0:
+    if not nodos_reales:
         return nx.Graph(), {}, set()
 
-    # escala auto
     total = sum(nx.get_edge_attributes(G, "distancia").values()) or 1.0
     escala = 6.0 / (total + 1.0)
 
-    # Si no es árbol, layout simple a la derecha
-    if not es_arbol_radial(G, root):
+    # No radial: simple a la derecha
+    if not es_arbol_radial(G):
         GD = G.copy()
         pos = {root: (0.0, 0.0)}
         parent, order = parent_order(GD, root)
@@ -287,8 +232,8 @@ def layout_serpiente(G: nx.Graph, root: int = 1, ancho: float = 3.6, salto: floa
 
     GD = nx.Graph()
     GD.add_nodes_from(G.nodes(data=True))
-
     pos = {root: (0.0, 0.0)}
+
     x, y = 0.0, 0.0
     direccion = +1
     codo_id = 0
@@ -305,8 +250,7 @@ def layout_serpiente(G: nx.Graph, root: int = 1, ancho: float = 3.6, salto: floa
 
     # Troncal serpiente
     for i in range(len(troncal) - 1):
-        u = troncal[i]
-        v = troncal[i + 1]
+        u, v = troncal[i], troncal[i + 1]
         dist_m = float(G[u][v].get("distancia", 0.0) or 0.0)
         dx = dist_m * escala
 
@@ -317,19 +261,12 @@ def layout_serpiente(G: nx.Graph, root: int = 1, ancho: float = 3.6, salto: floa
                 add_edge(u, v, dist_m)
                 x = x2
             else:
-                # parte en borde derecho y baja
-                a_borde_units = ancho - x
-                a_borde_m = a_borde_units / escala if escala else dist_m
-                rem_m = max(dist_m - a_borde_m, 0.0)
+                a_units = ancho - x
+                a_m = a_units / escala if escala else dist_m
+                rem_m = max(dist_m - a_m, 0.0)
 
-                c1 = new_codo()
-                pos[c1] = (ancho, y)
-                add_edge(u, c1, a_borde_m)
-
-                c2 = new_codo()
-                y -= salto
-                pos[c2] = (ancho, y)
-                add_edge(c1, c2, 0.0, es_codo=True)
+                c1 = new_codo(); pos[c1] = (ancho, y); add_edge(u, c1, a_m)
+                c2 = new_codo(); y -= salto; pos[c2] = (ancho, y); add_edge(c1, c2, 0.0, True)
 
                 direccion = -1
                 x = ancho
@@ -345,18 +282,12 @@ def layout_serpiente(G: nx.Graph, root: int = 1, ancho: float = 3.6, salto: floa
                 add_edge(u, v, dist_m)
                 x = x2
             else:
-                a_borde_units = x
-                a_borde_m = a_borde_units / escala if escala else dist_m
-                rem_m = max(dist_m - a_borde_m, 0.0)
+                a_units = x
+                a_m = a_units / escala if escala else dist_m
+                rem_m = max(dist_m - a_m, 0.0)
 
-                c1 = new_codo()
-                pos[c1] = (0.0, y)
-                add_edge(u, c1, a_borde_m)
-
-                c2 = new_codo()
-                y -= salto
-                pos[c2] = (0.0, y)
-                add_edge(c1, c2, 0.0, es_codo=True)
+                c1 = new_codo(); pos[c1] = (0.0, y); add_edge(u, c1, a_m)
+                c2 = new_codo(); y -= salto; pos[c2] = (0.0, y); add_edge(c1, c2, 0.0, True)
 
                 direccion = +1
                 x = 0.0
@@ -374,14 +305,15 @@ def layout_serpiente(G: nx.Graph, root: int = 1, ancho: float = 3.6, salto: floa
         k = rama_slot.get(attach, 0)
         rama_slot[attach] = k + 1
 
-        # alterna arriba/abajo, y separa por nivel
         sign = +1 if (k % 2 == 0) else -1
         extra = 0.35 * k
 
         xa, ya = pos[attach]
-        d0 = float(G[attach][child].get("distancia", 0.0) or 0.0) * escala
+        d0m = float(G[attach][child].get("distancia", 0.0) or 0.0)
+        d0 = d0m * escala
+
         pos[child] = (xa, ya + sign * (d0 + extra))
-        add_edge(attach, child, float(G[attach][child].get("distancia", 0.0) or 0.0))
+        add_edge(attach, child, d0m)
 
         stack = [(child, attach)]
         while stack:
@@ -390,9 +322,9 @@ def layout_serpiente(G: nx.Graph, root: int = 1, ancho: float = 3.6, salto: floa
             for v in G.neighbors(u):
                 if v == p or v in troncal_set or v in pos:
                     continue
-                dist_m = float(G[u][v].get("distancia", 0.0) or 0.0)
-                pos[v] = (xu + (dist_m * escala), yu)
-                add_edge(u, v, dist_m)
+                dm = float(G[u][v].get("distancia", 0.0) or 0.0)
+                pos[v] = (xu + (dm * escala), yu)
+                add_edge(u, v, dm)
                 stack.append((v, u))
 
     for t in troncal:
@@ -406,55 +338,60 @@ def layout_serpiente(G: nx.Graph, root: int = 1, ancho: float = 3.6, salto: floa
 
 
 # ============================================================
-# Dibujo
+# Render (TODO el dibujo en una sola función)
 # ============================================================
 
-def draw_edges(ax, GD: nx.Graph, pos: dict, lw: float = 2.0):
-    for u, v, _ in GD.edges(data=True):
-        if u not in pos or v not in pos:
-            continue
-        x1, y1 = pos[u]
-        x2, y2 = pos[v]
-        ax.plot([x1, x2], [y1, y2], color="black", linewidth=lw)
+def render_diagrama(
+    ax,
+    GD: nx.Graph,
+    pos: dict,
+    nodos_reales: set[int],
+    usuarios_por_nodo: dict[int, dict],
+    kva_por_nodo: dict[int, float] | None,
+    capacidad_transformador,
+    nodo_raiz: int = 1,
+):
+    # Edges
+    for u, v, _d in GD.edges(data=True):
+        if u in pos and v in pos:
+            x1, y1 = pos[u]; x2, y2 = pos[v]
+            ax.plot([x1, x2], [y1, y2], color="black", linewidth=2.0)
 
-
-def draw_nodes(ax, GD: nx.Graph, pos: dict, nodos_reales: set[int]):
+    # Nodes
     reales = [n for n in GD.nodes() if n in nodos_reales]
     codos = [n for n in GD.nodes() if n not in nodos_reales]
 
-    nx.draw_networkx_nodes(GD, pos, nodelist=reales, node_size=220, node_color="lightblue", edgecolors="black", ax=ax)
+    nx.draw_networkx_nodes(GD, pos, nodelist=reales, node_size=220, node_color="lightblue",
+                           edgecolors="black", ax=ax)
     if codos:
-        nx.draw_networkx_nodes(GD, pos, nodelist=codos, node_size=70, node_color="lightgray", edgecolors="black", ax=ax)
+        nx.draw_networkx_nodes(GD, pos, nodelist=codos, node_size=70, node_color="lightgray",
+                               edgecolors="black", ax=ax)
 
-
-def draw_labels(ax, GD: nx.Graph, pos: dict, nodos_reales: set[int]):
+    # Labels (nodos reales)
     labels = {n: str(n) for n in GD.nodes() if n in nodos_reales}
     nx.draw_networkx_labels(GD, pos, labels=labels, font_size=12, font_weight="bold", ax=ax)
 
-
-def draw_distances(ax, GD: nx.Graph, pos: dict):
+    # Distancias
     for u, v, d in GD.edges(data=True):
         dist = float(d.get("distancia", 0.0) or 0.0)
         if dist <= 0 or u not in pos or v not in pos:
             continue
         x1, y1 = pos[u]; x2, y2 = pos[v]
-        ax.text((x1+x2)/2, (y1+y2)/2 + 0.15, f"{dist:.1f} m", fontsize=11, color="red", ha="center")
+        ax.text((x1+x2)/2, (y1+y2)/2 + 0.15, f"{dist:.1f} m",
+                fontsize=11, color="red", ha="center")
 
+    # Transformador
+    if nodo_raiz in pos:
+        x, y = pos[nodo_raiz]
+        xt, yt = x - 0.9, y
+        ax.scatter([xt], [yt], marker="^", s=260, c="orange", edgecolors="black")
+        ax.text(xt - 0.15, yt, f"Transformador\n{capacidad_transformador} kVA",
+                fontsize=9, ha="right", va="center",
+                bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"))
 
-def draw_users(
-    ax,
-    pos: dict,
-    usuarios_por_nodo: dict[int, dict],
-    nodos_reales: set[int],
-    kva_por_nodo: dict[int, float] | None = None,
-):
-    """
-    Usuarios + (opcional) Demanda kVA SIN solapes (colocación en pixeles).
-    """
-    y_linea = 0.40
-    y_text = 0.12
-
-    labels = []
+    # Usuarios + kVA (sin solapes)
+    y_linea, y_text = 0.40, 0.12
+    labels_u = []
 
     for n in sorted(usuarios_por_nodo.keys()):
         if n not in nodos_reales or n not in pos:
@@ -467,118 +404,76 @@ def draw_users(
 
         x, y = pos[n]
         y2 = y - y_linea
-
-        # línea punteada fija
         ax.plot([x, x], [y, y2], "--", color="gray", linewidth=1)
 
-        kva = None
-        if isinstance(kva_por_nodo, dict) and n in kva_por_nodo:
-            kva = float(kva_por_nodo[n])
+        kva = float(kva_por_nodo.get(n, 0.0)) if isinstance(kva_por_nodo, dict) else 0.0
+        txt = f"Usuarios: {u}" + (f"\nDemanda: {kva:.1f} kVA" if kva > 0 else "")
 
-        texto = f"Usuarios: {u}"
-        if kva is not None and kva > 0:
-            texto += f"\nDemanda: {kva:.1f} kVA"
-
-        labels.append({
-            "x": x,
-            "y": (y2 - y_text),
-            "text": texto,
+        labels_u.append({
+            "x": x, "y": (y2 - y_text), "text": txt,
             "kwargs": dict(
-                fontsize=11,
-                color="blue",
-                ha="center",
-                va="top",
+                fontsize=11, color="blue", ha="center", va="top",
                 bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1.2),
             ),
         })
 
         if ue > 0:
-            labels.append({
-                "x": x,
-                "y": (y2 - y_text - 0.40),
-                "text": f"Especiales: {ue}",
+            labels_u.append({
+                "x": x, "y": (y2 - y_text - 0.40), "text": f"Especiales: {ue}",
                 "kwargs": dict(
-                    fontsize=11,
-                    color="red",
-                    ha="center",
-                    va="top",
+                    fontsize=11, color="red", ha="center", va="top",
                     bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1.2),
                 ),
             })
 
-    # colocación robusta (pixeles)
-    colocar_etiquetas_sin_solape_px(
-        ax,
-        labels,
-        step_px=18,
-        max_steps=50,
-        prefer_down=True,
-    )
+    colocar_etiquetas_sin_solape_px(ax, labels_u, step_px=18, max_steps=50, prefer_down=True)
 
 
-
-
-def draw_transformer(ax, pos: dict, kva, nodo: int = 1, dx: float = -0.9, dy: float = 0.0):
-    if nodo not in pos:
-        return
-    x, y = pos[nodo]
-    xt, yt = x + dx, y + dy
-    ax.scatter([xt], [yt], marker="^", s=260, c="orange", edgecolors="black")
-    ax.text(
-        xt - 0.15, yt,
-        f"Transformador\n{kva} kVA",
-        fontsize=9, ha="right", va="center",
-        bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"),
-    )
+def fig_to_reportlab_image(fig, width=5*inch, height=3*inch):
+    buf = io.BytesIO()
+    fig.savefig(buf, format="PNG", bbox_inches="tight")
+    buf.seek(0)
+    img = Image(buf, width=width, height=height)
+    img.hAlign = "CENTER"
+    return img
 
 
 # ============================================================
-# Salida principal
+# API principal
 # ============================================================
 
 def crear_grafico_nodos_df(df_conexiones, capacidad_transformador, nodo_raiz: int = 1, tabla_potencia=None):
     df_tramos, usuarios_por_nodo = separar_tramos_y_usuarios(df_conexiones)
     G = construir_grafo_desde_tramos(df_tramos)
-
     verificar_grafo(G, nodo_raiz=nodo_raiz)
 
     GD, pos, nodos_reales = layout_serpiente(G, root=nodo_raiz, ancho=5.2, salto=1.8)
+    kva_por_nodo = calcular_kva_por_nodo_desde_tabla(tabla_potencia) if tabla_potencia is not None else None
 
-    fig = plt.figure(figsize=(10, 6))
-    ax = plt.gca()
+    fig, ax = plt.subplots(figsize=(10, 6))
+    render_diagrama(
+        ax=ax,
+        GD=GD,
+        pos=pos,
+        nodos_reales=nodos_reales,
+        usuarios_por_nodo=usuarios_por_nodo,
+        kva_por_nodo=kva_por_nodo,
+        capacidad_transformador=capacidad_transformador,
+        nodo_raiz=nodo_raiz,
+    )
 
-    draw_edges(ax, GD, pos, lw=2.0)
-    draw_nodes(ax, GD, pos, nodos_reales)
-    draw_labels(ax, GD, pos, nodos_reales)
-
-    kva_por_nodo = None
-    if tabla_potencia is not None:
-        kva_por_nodo = calcular_kva_por_nodo_desde_tabla(tabla_potencia)
-
-    draw_users(ax, pos, usuarios_por_nodo, nodos_reales, kva_por_nodo=kva_por_nodo)
-
-    draw_distances(ax, GD, pos)
-    draw_transformer(ax, pos, capacidad_transformador, nodo=nodo_raiz, dx=-0.9, dy=0.0)
-
-    plt.title("Diagrama de Nodos del Transformador")
-    plt.axis("off")
+    ax.set_title("Diagrama de Nodos del Transformador")
+    ax.axis("off")
 
     xs = [p[0] for p in pos.values()] if pos else [0.0]
     ys = [p[1] for p in pos.values()] if pos else [0.0]
-    pad = 0.9
-    extra_left = 1.3  # ajustable
+    pad, extra_left = 0.9, 1.3
     ax.set_xlim(min(xs) - (pad + extra_left), max(xs) + pad)
     ax.set_ylim(min(ys) - pad, max(ys) + pad)
-
     ax.set_aspect("equal", adjustable="box")
 
-    buf = io.BytesIO()
-    fig.savefig(buf, format="PNG", bbox_inches="tight")
+    img = fig_to_reportlab_image(fig, width=5*inch, height=3*inch)
     plt.close(fig)
-    buf.seek(0)
-
-    img = Image(buf, width=5 * inch, height=3 * inch)
-    img.hAlign = "CENTER"
     return img
 
 
@@ -592,7 +487,7 @@ def crear_grafico_nodos(
     tabla_potencia=None,
 ):
     """
-    ✅ Wrapper retrocompatible (firma vieja).
+    Wrapper retrocompatible (firma vieja).
     - Si te pasan df_conexiones, lo usa (preferido).
     - Si no, construye un df mínimo con las listas.
     """
@@ -604,10 +499,8 @@ def crear_grafico_nodos(
             "nodo_final": list(nodos_final),
             "usuarios": list(usuarios),
             "distancia": list(distancias),
-            
         })
     else:
-        # Asegura que al menos existan columnas base
         if "distancia" not in df_conexiones.columns and distancias is not None:
             df_conexiones = df_conexiones.copy()
             df_conexiones["distancia"] = list(distancias)
@@ -640,10 +533,3 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         nodo_raiz=1,
         tabla_potencia=df_conexiones,
     )
-
-
-
-
-
-
-
