@@ -343,40 +343,76 @@ def draw_distances(ax, GD: nx.Graph, pos: dict):
 
 def draw_users(ax, pos: dict, usuarios_por_nodo: dict[int, dict], nodos_reales: set[int]):
     """
-    Determinista: cada nodo pone su texto debajo de sí mismo.
-    Sin stacking por X. Sin sorpresas.
+    Determinista + anti-solape:
+    - Mantiene el texto debajo del nodo.
+    - Si hay nodos muy cerca en X en la misma "banda" de Y, apila hacia abajo.
     """
     y_linea = 0.25
     y_text = 0.08
 
+    # parámetros de anti-solape (en unidades del plano)
+    y_band = 0.35      # cuantiza Y para agrupar nodos en la misma "fila"
+    min_dx = 0.55      # si dos nodos quedan más cerca que esto en X, se apila
+    step_down = 0.22   # cuánto baja cada nivel adicional
+
+    # armar lista de nodos dibujables (solo reales, con usuarios)
+    items = []
     for n in sorted(usuarios_por_nodo.keys()):
         if n not in nodos_reales or n not in pos:
             continue
-
         u = int(usuarios_por_nodo[n].get("usuarios", 0) or 0)
         ue = int(usuarios_por_nodo[n].get("usuarios_especiales", 0) or 0)
         if u <= 0 and ue <= 0:
             continue
-
         x, y = pos[n]
-        y2 = y - y_linea
-        ax.plot([x, x], [y, y2], "--", color="gray", linewidth=1)
+        band = int(round(y / y_band))
+        items.append((band, x, y, n, u, ue))
 
-        ax.text(
-            x, y2 - y_text,
-            f"Usuarios: {u}",
-            fontsize=11, color="blue",
-            ha="center", va="top",
-            bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1.2),
-        )
-        if ue > 0:
+    # agrupar por banda (fila) y resolver solapes en X apilando hacia abajo
+    from collections import defaultdict
+    grupos = defaultdict(list)
+    for band, x, y, n, u, ue in items:
+        grupos[band].append((x, y, n, u, ue))
+
+    for band in sorted(grupos.keys()):
+        grupo = sorted(grupos[band], key=lambda t: t[0])  # por x
+        prev_x = None
+        level = 0
+
+        for x, y, n, u, ue in grupo:
+            if prev_x is None:
+                level = 0
+            else:
+                # si está muy cerca del anterior, bajamos un nivel
+                if abs(x - prev_x) < min_dx:
+                    level += 1
+                else:
+                    level = 0
+
+            prev_x = x
+
+            y2 = y - y_linea
+            extra_down = level * step_down
+
+            ax.plot([x, x], [y, y2], "--", color="gray", linewidth=1)
+
             ax.text(
-                x, y2 - y_text - 0.15,
-                f"Especiales: {ue}",
-                fontsize=11, color="red",
+                x, (y2 - y_text) - extra_down,
+                f"Usuarios: {u}",
+                fontsize=11, color="blue",
                 ha="center", va="top",
                 bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1.2),
             )
+
+            if ue > 0:
+                ax.text(
+                    x, (y2 - y_text - 0.15) - extra_down,
+                    f"Especiales: {ue}",
+                    fontsize=11, color="red",
+                    ha="center", va="top",
+                    bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1.2),
+                )
+
 
 
 def draw_transformer(ax, pos: dict, kva, nodo: int = 1, dx: float = -0.9, dy: float = 0.0):
@@ -429,8 +465,10 @@ def crear_grafico_nodos_df(df_conexiones, capacidad_transformador, nodo_raiz: in
     xs = [p[0] for p in pos.values()] if pos else [0.0]
     ys = [p[1] for p in pos.values()] if pos else [0.0]
     pad = 0.9
-    ax.set_xlim(min(xs) - pad, max(xs) + pad)
+    extra_left = 1.3  # ajustable
+    ax.set_xlim(min(xs) - (pad + extra_left), max(xs) + pad)
     ax.set_ylim(min(ys) - pad, max(ys) + pad)
+
     ax.set_aspect("equal", adjustable="box")
 
     buf = io.BytesIO()
@@ -497,3 +535,4 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         capacidad_transformador=capacidad_transformador,
         nodo_raiz=1,
     )
+
