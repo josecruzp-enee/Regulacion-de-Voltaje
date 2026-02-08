@@ -383,11 +383,23 @@ def dibujar_etiquetas_nodos(ax, GD: nx.Graph, pos: dict, nodos_reales: set[int])
     )
 
 
-def dibujar_acometidas(ax, posiciones, df_conexiones, nodos_reales, omitir_nodos=None):
-
+def dibujar_acometidas(ax, posiciones: dict, df_conexiones, nodos_reales: set[int], omitir_nodos: set[int] | None = None):
+    """
+    Acometidas anti-solape (robusto):
+    - Agrupa por nodo_final (evita duplicados).
+    - Apila textos por "columna" (cercanía en X) para que no se monten.
+    - Solo dibuja en nodos reales (no CODO).
+    """
     import pandas as pd
 
     omitir_nodos = omitir_nodos or set()
+
+    # Parámetros de layout (ajustables)
+    y_linea = 0.25        # largo de la línea punteada hacia abajo
+    y_texto_1 = 0.08      # separación inicial texto respecto a la línea
+    y_stack_gap = 0.22    # separación vertical entre textos apilados
+    x_thresh = 0.35       # umbral para considerar misma "columna" (cercanía en X)
+    x_stagger = 0.22      # zig-zag opcional para nodos muy pegados en X
 
     df = df_conexiones.copy()
 
@@ -395,66 +407,84 @@ def dibujar_acometidas(ax, posiciones, df_conexiones, nodos_reales, omitir_nodos
         df["usuarios_especiales"] = 0
 
     df["nodo_final"] = pd.to_numeric(df["nodo_final"], errors="coerce").fillna(0).astype(int)
+    df["usuarios"] = pd.to_numeric(df.get("usuarios", 0), errors="coerce").fillna(0).astype(int)
+    df["usuarios_especiales"] = pd.to_numeric(df.get("usuarios_especiales", 0), errors="coerce").fillna(0).astype(int)
 
-    # Agrupación REAL (esto evita duplicados)
-    df_agg = df.groupby("nodo_final", as_index=False).agg({
-        "usuarios":"sum",
-        "usuarios_especiales":"sum"
-    })
+    # ✅ Agrupación real (no duplicados)
+    df_agg = (
+        df.groupby("nodo_final", as_index=False)[["usuarios", "usuarios_especiales"]]
+          .sum()
+    )
 
-    offset_y = -0.35
-    separacion_texto = 0.22
-
-    usados = set()
-
+    items = []
     for _, row in df_agg.iterrows():
-
         nf = int(row["nodo_final"])
-
-        if nf in usados:
-            continue
-
         if nf in omitir_nodos:
             continue
-
         if nf not in nodos_reales:
             continue
-
         if nf not in posiciones:
             continue
 
-        usados.add(nf)
-
+        x, y = posiciones[nf]
         normales = int(row["usuarios"])
         especiales = int(row["usuarios_especiales"])
+        items.append((nf, x, y, normales, especiales))
 
-        x, y = posiciones[nf]
+    # Ordenar por X para formar “columnas”
+    items.sort(key=lambda t: t[1])
 
-        # Línea más larga (mejora visual)
-        y2 = y + offset_y
+    # stacks: lista de columnas -> (x_ref, next_y_text)
+    stacks: list[tuple[float, float | None]] = []
 
+    def _get_stack_index(x: float) -> int:
+        for i, (xr, _) in enumerate(stacks):
+            if abs(x - xr) <= x_thresh:
+                return i
+        stacks.append((x, None))
+        return len(stacks) - 1
+
+    for idx, (nf, x, y, normales, especiales) in enumerate(items):
+        # pequeño zig-zag si dos nodos vienen pegados
+        dx = 0.0
+        if idx > 0 and abs(x - items[idx - 1][1]) <= x_thresh:
+            dx = x_stagger if (idx % 2 == 0) else -x_stagger
+
+        # línea punteada hacia abajo
+        y2 = y - y_linea
         ax.plot([x, x], [y, y2], "--", color="gray", linewidth=1)
 
+        # asignar columna y apilar
+        si = _get_stack_index(x)
+        xr, next_y = stacks[si]
+
+        y_text = y2 - y_texto_1
+        if next_y is None:
+            stacks[si] = (xr, y_text - y_stack_gap)
+        else:
+            # siempre baja para no pisar
+            if y_text > next_y:
+                y_text = next_y
+            stacks[si] = (xr, y_text - y_stack_gap)
+
+        # texto usuarios (con fondo para legibilidad)
         ax.text(
-            x,
-            y2 - separacion_texto,
+            x + dx, y_text,
             f"Usuarios: {normales}",
-            fontsize=11,
-            color="blue",
-            ha="center",
-            va="top"
+            fontsize=11, color="blue",
+            ha="center", va="top",
+            bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1.2),
         )
 
         if especiales > 0:
             ax.text(
-                x,
-                y2 - separacion_texto*2,
+                x + dx, y_text - 0.15,
                 f"Especiales: {especiales}",
-                fontsize=11,
-                color="red",
-                ha="center",
-                va="top"
+                fontsize=11, color="red",
+                ha="center", va="top",
+                bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1.2),
             )
+
 
 
 def dibujar_distancias_tramos(ax, GD: nx.Graph, pos: dict):
@@ -590,4 +620,5 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones,
     )
+
 
