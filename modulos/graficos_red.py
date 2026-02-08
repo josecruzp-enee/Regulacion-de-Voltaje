@@ -397,7 +397,12 @@ def draw_transformer(ax, pos: dict, kva, nodo: int = 1, dx: float = -0.9, dy: fl
 # Salida principal
 # ============================================================
 
-def crear_grafico_nodos(df_conexiones, capacidad_transformador, nodo_raiz: int = 1):
+def crear_grafico_nodos_df(df_conexiones, capacidad_transformador, nodo_raiz: int = 1):
+    """
+    Implementación nueva: toma df_conexiones y calcula:
+      - tramos (ni!=nf)
+      - usuarios por nodo (incluye ni==nf como 'usuarios en nodo')
+    """
     df_tramos, usuarios_por_nodo = separar_tramos_y_usuarios(df_conexiones)
     G = construir_grafo_desde_tramos(df_tramos)
 
@@ -412,7 +417,7 @@ def crear_grafico_nodos(df_conexiones, capacidad_transformador, nodo_raiz: int =
     draw_nodes(ax, GD, pos, nodos_reales)
     draw_labels(ax, GD, pos, nodos_reales)
 
-    # Usuarios deterministas (incluye el 1->1 correctamente en el nodo 1)
+    # ✅ Usuarios deterministas por nodo (incluye el 1->1 correctamente en nodo 1)
     draw_users(ax, pos, usuarios_por_nodo, nodos_reales)
 
     draw_distances(ax, GD, pos)
@@ -421,7 +426,6 @@ def crear_grafico_nodos(df_conexiones, capacidad_transformador, nodo_raiz: int =
     plt.title("Diagrama de Nodos del Transformador")
     plt.axis("off")
 
-    # Encadre automático
     xs = [p[0] for p in pos.values()] if pos else [0.0]
     ys = [p[1] for p in pos.values()] if pos else [0.0]
     pad = 0.9
@@ -439,9 +443,57 @@ def crear_grafico_nodos(df_conexiones, capacidad_transformador, nodo_raiz: int =
     return img
 
 
+def crear_grafico_nodos(
+    nodos_inicio,
+    nodos_final,
+    usuarios,
+    distancias,
+    capacidad_transformador,
+    df_conexiones=None,
+):
+    """
+    ✅ Wrapper retrocompatible (firma vieja).
+    - Si te pasan df_conexiones, lo usa (preferido).
+    - Si no, construye un df mínimo con las listas.
+    """
+    import pandas as pd
+
+    if df_conexiones is None:
+        df_conexiones = pd.DataFrame({
+            "nodo_inicial": list(nodos_inicio),
+            "nodo_final": list(nodos_final),
+            "usuarios": list(usuarios),
+            "distancia": list(distancias),
+        })
+    else:
+        # Asegura que al menos existan columnas base
+        if "distancia" not in df_conexiones.columns and distancias is not None:
+            df_conexiones = df_conexiones.copy()
+            df_conexiones["distancia"] = list(distancias)
+
+    return crear_grafico_nodos_df(
+        df_conexiones=df_conexiones,
+        capacidad_transformador=capacidad_transformador,
+        nodo_raiz=1,
+    )
+
+
 def crear_grafico_nodos_desde_archivo(ruta_excel: str):
     if cargar_datos_circuito is None:
         raise ImportError("No se encontró cargar_datos_circuito. Revisa modulos/datos.py")
 
-    df_conexiones, _, _, _, _, kva, *_ = cargar_datos_circuito(ruta_excel)
-    return crear_grafico_nodos(df_conexiones=df_conexiones, capacidad_transformador=kva, nodo_raiz=1)
+    (
+        df_conexiones,
+        _df_parametros,
+        _df_info,
+        _tipo_conductor,
+        _area_lote,
+        capacidad_transformador,
+        *_resto
+    ) = cargar_datos_circuito(ruta_excel)
+
+    return crear_grafico_nodos_df(
+        df_conexiones=df_conexiones,
+        capacidad_transformador=capacidad_transformador,
+        nodo_raiz=1,
+    )
