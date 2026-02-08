@@ -451,8 +451,8 @@ def draw_users(
     """
     Usuarios + (opcional) Demanda kVA SIN solapes (colocación en pixeles).
     """
-    y_linea = 0.25
-    y_text = 0.08
+    y_linea = 0.40
+    y_text = 0.12
 
     labels = []
 
@@ -542,7 +542,7 @@ def crear_grafico_nodos_df(df_conexiones, capacidad_transformador, nodo_raiz: in
 
     verificar_grafo(G, nodo_raiz=nodo_raiz)
 
-    GD, pos, nodos_reales = layout_serpiente(G, root=nodo_raiz, ancho=3.6, salto=1.2)
+    GD, pos, nodos_reales = layout_serpiente(G, root=nodo_raiz, ancho=5.2, salto=1.8)
 
     fig = plt.figure(figsize=(10, 6))
     ax = plt.gca()
@@ -640,6 +640,7 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         nodo_raiz=1,
         tabla_potencia=df_conexiones,
     )
+
 
 
 
