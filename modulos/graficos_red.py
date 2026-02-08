@@ -524,6 +524,7 @@ def crear_grafico_nodos(
     distancias,
     capacidad_transformador,
     df_conexiones=None,
+    tabla_potencia=None,
 ):
     """
     ✅ Wrapper retrocompatible (firma vieja).
@@ -538,6 +539,7 @@ def crear_grafico_nodos(
             "nodo_final": list(nodos_final),
             "usuarios": list(usuarios),
             "distancia": list(distancias),
+            
         })
     else:
         # Asegura que al menos existan columnas base
@@ -549,6 +551,7 @@ def crear_grafico_nodos(
         df_conexiones=df_conexiones,
         capacidad_transformador=capacidad_transformador,
         nodo_raiz=1,
+        tabla_potencia=tabla_potencia,
     )
 
 
@@ -570,6 +573,8 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         df_conexiones=df_conexiones,
         capacidad_transformador=capacidad_transformador,
         nodo_raiz=1,
+        tabla_potencia=df_conexiones,
     )
+
 
 
