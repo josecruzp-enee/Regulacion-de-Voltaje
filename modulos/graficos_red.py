@@ -30,6 +30,74 @@ try:
 except Exception:
     cargar_datos_circuito = None
 
+def _bboxes_overlap(a, b) -> bool:
+    # a, b = (x0, y0, x1, y1) en coords de display (pixeles)
+    return not (a[2] <= b[0] or a[0] >= b[2] or a[3] <= b[1] or a[1] >= b[3])
+
+
+def colocar_etiquetas_sin_solape(
+    ax,
+    labels,
+    max_levels: int = 20,
+    dy_step_data: float = 0.22,
+    prefer_down: bool = True,
+):
+    """
+    Coloca etiquetas evitando solapes midiendo bboxes reales.
+
+    labels: lista de dicts:
+      {
+        "x": float, "y": float,
+        "text": str,
+        "kwargs": dict  (kwargs para ax.text)
+      }
+
+    Estrategia: intenta niveles 0..max_levels moviendo en Y.
+    """
+    fig = ax.figure
+    renderer = fig.canvas.get_renderer()
+
+    placed_bboxes = []
+
+    # Forzamos un draw para que haya renderer listo (crítico)
+    fig.canvas.draw()
+
+    for lab in labels:
+        x = lab["x"]
+        y0 = lab["y"]
+        text = lab["text"]
+        kwargs = dict(lab.get("kwargs", {}))
+
+        # intentos por niveles
+        chosen_artist = None
+        chosen_bbox = None
+
+        for level in range(max_levels + 1):
+            dy = (level * dy_step_data) * (-1 if prefer_down else +1)
+            y = y0 + dy
+
+            artist = ax.text(x, y, text, **kwargs)
+            fig.canvas.draw()
+            bbox = artist.get_window_extent(renderer=renderer).expanded(1.02, 1.08)
+            bb = (bbox.x0, bbox.y0, bbox.x1, bbox.y1)
+
+            if not any(_bboxes_overlap(bb, pb) for pb in placed_bboxes):
+                chosen_artist = artist
+                chosen_bbox = bb
+                break
+
+            # si colisiona, borramos y probamos otro nivel
+            artist.remove()
+
+        # si no encontramos hueco, lo dejamos en el último nivel (sin borrar)
+        if chosen_artist is None:
+            y = y0 + ((max_levels * dy_step_data) * (-1 if prefer_down else +1))
+            chosen_artist = ax.text(x, y, text, **kwargs)
+            fig.canvas.draw()
+            bbox = chosen_artist.get_window_extent(renderer=renderer).expanded(1.02, 1.08)
+            chosen_bbox = (bbox.x0, bbox.y0, bbox.x1, bbox.y1)
+
+        placed_bboxes.append(chosen_bbox)
 
 # ============================================================
 # Entradas / Normalización
@@ -371,21 +439,18 @@ def draw_users(
     kva_por_nodo: dict[int, float] | None = None,
 ):
     """
-    Determinista + anti-solape:
-    - Mantiene el texto debajo del nodo.
-    - Si hay nodos muy cerca en X en la misma "banda" de Y, apila hacia abajo.
-    - (Opcional) muestra Demanda (kVA) por nodo usando kva_por_nodo[n].
+    Dibuja usuarios + (opcional) demanda kVA por nodo SIN solapes.
+    Estrategia robusta:
+      - Junta todas las etiquetas como 'labels'
+      - Las coloca midiendo el bbox real (renderer) para evitar superposición
     """
+    # geometría base de "línea punteada" bajo el nodo
     y_linea = 0.25
     y_text = 0.08
 
-    # parámetros de anti-solape (en unidades del plano)
-    y_band = 0.35      # cuantiza Y para agrupar nodos en la misma "fila"
-    min_dx = 0.55      # si dos nodos quedan más cerca que esto en X, se apila
-    step_down = 0.22   # cuánto baja cada nivel adicional
+    labels = []
 
-    # armar lista de nodos dibujables (solo reales, con usuarios)
-    items = []
+    # 1) Recolectar etiquetas (NO dibujar texto todavía)
     for n in sorted(usuarios_por_nodo.keys()):
         if n not in nodos_reales or n not in pos:
             continue
@@ -396,60 +461,58 @@ def draw_users(
             continue
 
         x, y = pos[n]
-        band = int(round(y / y_band))
 
+        # línea punteada fija (esto no genera solape)
+        y2 = y - y_linea
+        ax.plot([x, x], [y, y2], "--", color="gray", linewidth=1)
+
+        # kVA opcional
         kva = None
         if isinstance(kva_por_nodo, dict) and n in kva_por_nodo:
             kva = float(kva_por_nodo[n])
 
-        items.append((band, x, y, n, u, ue, kva))
+        texto = f"Usuarios: {u}"
+        if kva is not None and kva > 0:
+            texto += f"\nDemanda: {kva:.1f} kVA"
 
-    # agrupar por banda (fila) y resolver solapes en X apilando hacia abajo
-    from collections import defaultdict
-    grupos = defaultdict(list)
-    for band, x, y, n, u, ue, kva in items:
-        grupos[band].append((x, y, n, u, ue, kva))
-
-    for band in sorted(grupos.keys()):
-        grupo = sorted(grupos[band], key=lambda t: t[0])  # por x
-        prev_x = None
-        level = 0
-
-        for x, y, n, u, ue, kva in grupo:
-            if prev_x is None:
-                level = 0
-            else:
-                if abs(x - prev_x) < min_dx:
-                    level += 1
-                else:
-                    level = 0
-            prev_x = x
-
-            y2 = y - y_linea
-            extra_down = level * step_down
-
-            ax.plot([x, x], [y, y2], "--", color="gray", linewidth=1)
-
-            texto = f"Usuarios: {u}"
-            if kva is not None and kva > 0:
-                texto += f"\nDemanda: {kva:.1f} kVA"
-
-            ax.text(
-                x, (y2 - y_text) - extra_down,
-                texto,
-                fontsize=11, color="blue",
-                ha="center", va="top",
+        # etiqueta principal (azul)
+        labels.append({
+            "x": x,
+            "y": (y2 - y_text),
+            "text": texto,
+            "kwargs": dict(
+                fontsize=11,
+                color="blue",
+                ha="center",
+                va="top",
                 bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1.2),
             )
+        })
 
-            if ue > 0:
-                ax.text(
-                    x, (y2 - y_text - 0.33) - extra_down,
-                    f"Especiales: {ue}",
-                    fontsize=11, color="red",
-                    ha="center", va="top",
+        # etiqueta de especiales (roja), si aplica
+        if ue > 0:
+            labels.append({
+                "x": x,
+                "y": (y2 - y_text - 0.40),  # un poco más abajo que la principal
+                "text": f"Especiales: {ue}",
+                "kwargs": dict(
+                    fontsize=11,
+                    color="red",
+                    ha="center",
+                    va="top",
                     bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1.2),
                 )
+            })
+
+    # 2) Colocar etiquetas evitando solapes (ajusta en Y por niveles)
+    # dy_step_data controla cuánto baja cada intento. Subilo si querés más separación.
+    colocar_etiquetas_sin_solape(
+        ax,
+        labels,
+        max_levels=25,
+        dy_step_data=0.22,
+        prefer_down=True,
+    )
 
 
 
@@ -575,6 +638,7 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         nodo_raiz=1,
         tabla_potencia=df_conexiones,
     )
+
 
 
 
