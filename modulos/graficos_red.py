@@ -35,6 +35,28 @@ except Exception:
 # Entradas / Normalización
 # ============================================================
 
+def calcular_kva_por_nodo_desde_tabla(tabla_potencia) -> dict[int, float]:
+    """
+    Suma kVA por nodo_final desde la tabla de cargas (cargas.py).
+    Usa 'kva_total' si existe; si no, usa 'kva'.
+    """
+    import pandas as pd
+
+    df = tabla_potencia.copy()
+
+    if "nodo_final" not in df.columns:
+        raise ValueError("tabla_potencia debe incluir 'nodo_final'.")
+
+    col = "kva_total" if "kva_total" in df.columns else ("kva" if "kva" in df.columns else None)
+    if col is None:
+        raise ValueError("tabla_potencia debe incluir 'kva_total' o 'kva'.")
+
+    df["nodo_final"] = pd.to_numeric(df["nodo_final"], errors="coerce").fillna(0).astype(int)
+    df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0).astype(float)
+
+    kva_por_nodo = df.groupby("nodo_final")[col].sum().to_dict()
+    return {int(k): float(v) for k, v in kva_por_nodo.items()}
+
 def separar_tramos_y_usuarios(df_conexiones):
     """
     Devuelve:
@@ -341,11 +363,18 @@ def draw_distances(ax, GD: nx.Graph, pos: dict):
         ax.text((x1+x2)/2, (y1+y2)/2 + 0.15, f"{dist:.1f} m", fontsize=11, color="red", ha="center")
 
 
-def draw_users(ax, pos: dict, usuarios_por_nodo: dict[int, dict], nodos_reales: set[int]):
+def draw_users(
+    ax,
+    pos: dict,
+    usuarios_por_nodo: dict[int, dict],
+    nodos_reales: set[int],
+    kva_por_nodo: dict[int, float] | None = None,
+):
     """
     Determinista + anti-solape:
     - Mantiene el texto debajo del nodo.
     - Si hay nodos muy cerca en X en la misma "banda" de Y, apila hacia abajo.
+    - (Opcional) muestra Demanda (kVA) por nodo usando kva_por_nodo[n].
     """
     y_linea = 0.25
     y_text = 0.08
@@ -360,35 +389,40 @@ def draw_users(ax, pos: dict, usuarios_por_nodo: dict[int, dict], nodos_reales: 
     for n in sorted(usuarios_por_nodo.keys()):
         if n not in nodos_reales or n not in pos:
             continue
+
         u = int(usuarios_por_nodo[n].get("usuarios", 0) or 0)
         ue = int(usuarios_por_nodo[n].get("usuarios_especiales", 0) or 0)
         if u <= 0 and ue <= 0:
             continue
+
         x, y = pos[n]
         band = int(round(y / y_band))
-        items.append((band, x, y, n, u, ue))
+
+        kva = None
+        if isinstance(kva_por_nodo, dict) and n in kva_por_nodo:
+            kva = float(kva_por_nodo[n])
+
+        items.append((band, x, y, n, u, ue, kva))
 
     # agrupar por banda (fila) y resolver solapes en X apilando hacia abajo
     from collections import defaultdict
     grupos = defaultdict(list)
-    for band, x, y, n, u, ue in items:
-        grupos[band].append((x, y, n, u, ue))
+    for band, x, y, n, u, ue, kva in items:
+        grupos[band].append((x, y, n, u, ue, kva))
 
     for band in sorted(grupos.keys()):
         grupo = sorted(grupos[band], key=lambda t: t[0])  # por x
         prev_x = None
         level = 0
 
-        for x, y, n, u, ue in grupo:
+        for x, y, n, u, ue, kva in grupo:
             if prev_x is None:
                 level = 0
             else:
-                # si está muy cerca del anterior, bajamos un nivel
                 if abs(x - prev_x) < min_dx:
                     level += 1
                 else:
                     level = 0
-
             prev_x = x
 
             y2 = y - y_linea
@@ -396,9 +430,13 @@ def draw_users(ax, pos: dict, usuarios_por_nodo: dict[int, dict], nodos_reales: 
 
             ax.plot([x, x], [y, y2], "--", color="gray", linewidth=1)
 
+            texto = f"Usuarios: {u}"
+            if kva is not None and kva > 0:
+                texto += f"\nDemanda: {kva:.1f} kVA"
+
             ax.text(
                 x, (y2 - y_text) - extra_down,
-                f"Usuarios: {u}",
+                texto,
                 fontsize=11, color="blue",
                 ha="center", va="top",
                 bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1.2),
@@ -406,7 +444,7 @@ def draw_users(ax, pos: dict, usuarios_por_nodo: dict[int, dict], nodos_reales: 
 
             if ue > 0:
                 ax.text(
-                    x, (y2 - y_text - 0.15) - extra_down,
+                    x, (y2 - y_text - 0.33) - extra_down,
                     f"Especiales: {ue}",
                     fontsize=11, color="red",
                     ha="center", va="top",
@@ -433,12 +471,7 @@ def draw_transformer(ax, pos: dict, kva, nodo: int = 1, dx: float = -0.9, dy: fl
 # Salida principal
 # ============================================================
 
-def crear_grafico_nodos_df(df_conexiones, capacidad_transformador, nodo_raiz: int = 1):
-    """
-    Implementación nueva: toma df_conexiones y calcula:
-      - tramos (ni!=nf)
-      - usuarios por nodo (incluye ni==nf como 'usuarios en nodo')
-    """
+def crear_grafico_nodos_df(df_conexiones, capacidad_transformador, nodo_raiz: int = 1, tabla_potencia=None):
     df_tramos, usuarios_por_nodo = separar_tramos_y_usuarios(df_conexiones)
     G = construir_grafo_desde_tramos(df_tramos)
 
@@ -453,8 +486,11 @@ def crear_grafico_nodos_df(df_conexiones, capacidad_transformador, nodo_raiz: in
     draw_nodes(ax, GD, pos, nodos_reales)
     draw_labels(ax, GD, pos, nodos_reales)
 
-    # ✅ Usuarios deterministas por nodo (incluye el 1->1 correctamente en nodo 1)
-    draw_users(ax, pos, usuarios_por_nodo, nodos_reales)
+    kva_por_nodo = None
+    if tabla_potencia is not None:
+        kva_por_nodo = calcular_kva_por_nodo_desde_tabla(tabla_potencia)
+
+    draw_users(ax, pos, usuarios_por_nodo, nodos_reales, kva_por_nodo=kva_por_nodo)
 
     draw_distances(ax, GD, pos)
     draw_transformer(ax, pos, capacidad_transformador, nodo=nodo_raiz, dx=-0.9, dy=0.0)
@@ -535,4 +571,5 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         capacidad_transformador=capacidad_transformador,
         nodo_raiz=1,
     )
+
 
