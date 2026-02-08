@@ -383,95 +383,77 @@ def dibujar_etiquetas_nodos(ax, GD: nx.Graph, pos: dict, nodos_reales: set[int])
     )
 
 
-def dibujar_acometidas(ax, posiciones: dict, df_conexiones, nodos_reales: set[int], omitir_nodos: set[int] | None = None):
-    """
-    Acometidas con anti-solape (ROBUSTO):
-    - Agrupa por nodo_final para evitar duplicados.
-    - Solo dibuja en nodos reales (no en CODO).
-    """
+def dibujar_acometidas(ax, posiciones, df_conexiones, nodos_reales, omitir_nodos=None):
+
     import pandas as pd
 
     omitir_nodos = omitir_nodos or set()
 
-    y_linea = 0.25
-    y_texto_1 = 0.08
-    y_stack_gap = 0.22
-    x_thresh = 0.35
-    x_stagger = 0.22
-
     df = df_conexiones.copy()
+
     if "usuarios_especiales" not in df.columns:
         df["usuarios_especiales"] = 0
 
     df["nodo_final"] = pd.to_numeric(df["nodo_final"], errors="coerce").fillna(0).astype(int)
-    df["usuarios"] = pd.to_numeric(df.get("usuarios", 0), errors="coerce").fillna(0).astype(int)
-    df["usuarios_especiales"] = pd.to_numeric(df.get("usuarios_especiales", 0), errors="coerce").fillna(0).astype(int)
 
-    df_agg = (
-        df.groupby("nodo_final", as_index=False)[["usuarios", "usuarios_especiales"]]
-          .sum()
-    )
+    # Agrupación REAL (esto evita duplicados)
+    df_agg = df.groupby("nodo_final", as_index=False).agg({
+        "usuarios":"sum",
+        "usuarios_especiales":"sum"
+    })
 
-    items = []
+    offset_y = -0.35
+    separacion_texto = 0.22
+
+    usados = set()
+
     for _, row in df_agg.iterrows():
+
         nf = int(row["nodo_final"])
+
+        if nf in usados:
+            continue
+
         if nf in omitir_nodos:
             continue
+
         if nf not in nodos_reales:
             continue
+
         if nf not in posiciones:
             continue
 
-        normales = int(row.get("usuarios", 0) or 0)
-        especiales = int(row.get("usuarios_especiales", 0) or 0)
+        usados.add(nf)
+
+        normales = int(row["usuarios"])
+        especiales = int(row["usuarios_especiales"])
+
         x, y = posiciones[nf]
-        items.append((nf, x, y, normales, especiales))
 
-    items.sort(key=lambda t: t[1])
+        # Línea más larga (mejora visual)
+        y2 = y + offset_y
 
-    stacks: list[tuple[float, float | None]] = []  # (x_ref, next_y_text)
-
-    def _get_stack(x):
-        for i, (xr, ny) in enumerate(stacks):
-            if abs(x - xr) <= x_thresh:
-                return i
-        stacks.append((x, None))
-        return len(stacks) - 1
-
-    for idx, (nf, x, y, normales, especiales) in enumerate(items):
-        dx = 0.0
-        if idx > 0:
-            x_prev = items[idx - 1][1]
-            if abs(x - x_prev) <= x_thresh:
-                dx = x_stagger if (idx % 2 == 0) else -x_stagger
-
-        y2 = y - y_linea
         ax.plot([x, x], [y, y2], "--", color="gray", linewidth=1)
 
-        si = _get_stack(x)
-        xr, next_y = stacks[si]
-
-        y_text = y2 - y_texto_1
-        if next_y is None:
-            stacks[si] = (xr, y_text - y_stack_gap)
-        else:
-            if y_text > next_y:
-                y_text = next_y
-            stacks[si] = (xr, y_text - y_stack_gap)
-
         ax.text(
-            x + dx, y_text,
+            x,
+            y2 - separacion_texto,
             f"Usuarios: {normales}",
-            fontsize=11, color="blue",
-            ha="center", va="top",
+            fontsize=11,
+            color="blue",
+            ha="center",
+            va="top"
         )
 
         if especiales > 0:
             ax.text(
-                x + dx, y_text - 0.15,
+                x,
+                y2 - separacion_texto*2,
                 f"Especiales: {especiales}",
-                fontsize=11, color="red",
-                ha="center", va="top",
+                fontsize=11,
+                color="red",
+                ha="center",
+                va="top"
             )
 
 
@@ -608,3 +590,4 @@ def crear_grafico_nodos_desde_archivo(ruta_excel: str):
         capacidad_transformador=capacidad_transformador,
         df_conexiones=df_conexiones,
     )
+
