@@ -303,97 +303,30 @@ def layout_serpiente(G: nx.Graph, root: int = 1, ancho: float = 5.2, salto: floa
 # Render (diagrama arriba + tabla abajo)
 # ============================================================
 
-def render_diagrama(ax, GD, pos, nodos_reales, cap_kva, root=1):
-    # Edges
-    for u, v, _ in GD.edges(data=True):
-        if u in pos and v in pos:
-            x1, y1 = pos[u]
-            x2, y2 = pos[v]
-            ax.plot([x1, x2], [y1, y2], color="black", linewidth=2.0)
-
-    # Nodes
-    reales = [n for n in GD.nodes() if n in nodos_reales]
-    codos = [n for n in GD.nodes() if n not in nodos_reales]
-
-    nx.draw_networkx_nodes(
-        GD, pos,
-        nodelist=reales,
-        node_size=220,
-        node_color="lightblue",
-        edgecolors="black",
-        ax=ax
-    )
-    if codos:
-        nx.draw_networkx_nodes(
-            GD, pos,
-            nodelist=codos,
-            node_size=70,
-            node_color="lightgray",
-            edgecolors="black",
-            ax=ax
-        )
-
-    # Labels nodos reales
-    nx.draw_networkx_labels(
-        GD, pos,
-        labels={n: str(n) for n in reales},
-        font_size=12,
-        font_weight="bold",
-        ax=ax
-    )
-
-    # Distancias
-    for u, v, d in GD.edges(data=True):
-        dist = float(d.get("distancia", 0.0) or 0.0)
-        if dist <= 0 or u not in pos or v not in pos:
-            continue
-        x1, y1 = pos[u]
-        x2, y2 = pos[v]
-        ax.text(
-            (x1 + x2) / 2,
-            (y1 + y2) / 2 + 0.15,
-            f"{dist:.1f} m",
-            fontsize=11,
-            color="red",
-            ha="center",
-        )
-
-    # Transformador
-    if root in pos:
-        x, y = pos[root]
-        xt, yt = x - 0.9, y
-        ax.scatter([xt], [yt], marker="^", s=260, c="orange", edgecolors="black")
-        ax.text(
-            xt - 0.15, yt,
-            f"Transformador\n{cap_kva} kVA",
-            fontsize=9,
-            ha="right",
-            va="center",
-            bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"),
-        )
-
-
 def dibujar_tabla_cargas(ax_tbl, usuarios_por_nodo: dict[int, dict], kva_por_nodo: dict[int, float]):
     """
     Tabla dentro de la figura (matplotlib).
-    Incluye solo nodos con usuarios/kVA/especiales > 0.
+    Incluye solo nodos con usuarios/kVA > 0.
     """
     ax_tbl.axis("off")
 
     filas = []
     for n in sorted(set(usuarios_por_nodo.keys()) | set(kva_por_nodo.keys())):
         u = int(usuarios_por_nodo.get(n, {}).get("usuarios", 0) or 0)
-        ue = int(usuarios_por_nodo.get(n, {}).get("usuarios_especiales", 0) or 0)
         kva = float(kva_por_nodo.get(n, 0.0) or 0.0)
-        if u <= 0 and ue <= 0 and kva <= 0:
+
+        # 🔥 condición limpia (sin especiales)
+        if u <= 0 and kva <= 0:
             continue
-        filas.append([str(n), str(u), f"{kva:.1f}", str(ue)])
+
+        filas.append([str(n), str(u), f"{kva:.1f}"])
 
     if not filas:
         ax_tbl.text(0.5, 0.5, "Sin cargas por nodo.", ha="center", va="center", fontsize=10)
         return
 
-    col_labels = ["Nodo", "Usuarios", "Demanda (kVA)", "Especiales"]
+    # 🔥 columnas SIN "Especiales"
+    col_labels = ["Nodo", "Usuarios", "Demanda (kVA)"]
 
     tbl = ax_tbl.table(
         cellText=filas,
@@ -404,12 +337,12 @@ def dibujar_tabla_cargas(ax_tbl, usuarios_por_nodo: dict[int, dict], kva_por_nod
         bbox=[0.05, 0.0, 0.90, 1.0],
     )
 
+    # 🔥 tamaño mejorado
     tbl.auto_set_font_size(False)
-    tbl.set_fontsize(9)
-    tbl.scale(1.0, 1.2)
+    tbl.set_fontsize(10)
+    tbl.scale(1.2, 1.4)
 
     ax_tbl.set_title("Detalle de Cargas por Nodo", fontsize=10, pad=4)
-
 
 def fig_to_rl_image(fig, width=5 * inch, height=3 * inch):
     buf = io.BytesIO()
