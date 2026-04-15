@@ -447,7 +447,7 @@ def crear_grafico_nodos_df(df_conexiones, capacidad_transformador, nodo_raiz: in
 
     # Figura con 2 áreas: diagrama + tabla (misma imagen)
     fig = plt.figure(figsize=(10, 6))
-    gs = gridspec.GridSpec(2, 1, height_ratios=[3.2, 1.2], hspace=0.12)
+    gs = gridspec.GridSpec(2, 1, height_ratios=[2.5, 2.0], hspace=0.18)
 
     ax = fig.add_subplot(gs[0])
     ax_tbl = fig.add_subplot(gs[1])
