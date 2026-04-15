@@ -376,7 +376,7 @@ def render_diagrama(ax, GD, pos, nodos_reales, cap_kva, root=1):
 def dibujar_tabla_cargas(ax_tbl, usuarios_por_nodo: dict[int, dict], kva_por_nodo: dict[int, float]):
     """
     Tabla dentro de la figura (matplotlib).
-    Incluye solo nodos con usuarios/kVA > 0.
+    Estilo consistente con PDF: encabezado azul, texto legible.
     """
     ax_tbl.axis("off")
 
@@ -385,17 +385,15 @@ def dibujar_tabla_cargas(ax_tbl, usuarios_por_nodo: dict[int, dict], kva_por_nod
         u = int(usuarios_por_nodo.get(n, {}).get("usuarios", 0) or 0)
         kva = float(kva_por_nodo.get(n, 0.0) or 0.0)
 
-        # 🔥 condición limpia (sin especiales)
         if u <= 0 and kva <= 0:
             continue
 
         filas.append([str(n), str(u), f"{kva:.1f}"])
 
     if not filas:
-        ax_tbl.text(0.5, 0.5, "Sin cargas por nodo.", ha="center", va="center", fontsize=10)
+        ax_tbl.text(0.5, 0.5, "Sin cargas por nodo.", ha="center", va="center", fontsize=11)
         return
 
-    # 🔥 columnas SIN "Especiales"
     col_labels = ["Nodo", "Usuarios", "Demanda (kVA)"]
 
     tbl = ax_tbl.table(
@@ -404,15 +402,26 @@ def dibujar_tabla_cargas(ax_tbl, usuarios_por_nodo: dict[int, dict], kva_por_nod
         loc="center",
         cellLoc="center",
         colLoc="center",
-        bbox=[0.05, 0.0, 0.90, 1.0],
+        bbox=[0.15, 0.0, 0.70, 1.0],   # 🔥 más centrada (NO más ancha)
     )
 
-    # 🔥 tamaño mejorado
+    # 🔥 CONTROL TOTAL DE FUENTE
     tbl.auto_set_font_size(False)
-    tbl.set_fontsize(10)
-    tbl.scale(1.2, 1.4)
+    tbl.set_fontsize(12)   # 👈 aquí subes tamaño real
 
-    ax_tbl.set_title("Detalle de Cargas por Nodo", fontsize=10, pad=4)
+    # 🔥 MÁS ALTURA, NO MÁS ANCHO
+    tbl.scale(1.0, 1.6)
+
+    # 🔥 ESTILO ENCABEZADO AZUL (como tus otras tablas)
+    for (row, col), cell in tbl.get_celld().items():
+        if row == 0:
+            cell.set_facecolor("#A7C7D7")  # azul claro
+            cell.set_text_props(weight="bold", color="black")
+        else:
+            cell.set_facecolor("white")
+
+    # 🔥 TÍTULO MÁS CLARO
+    ax_tbl.set_title("Detalle de Cargas por Nodo", fontsize=11, pad=6)
 
 
 def fig_to_rl_image(fig, width=5 * inch, height=3 * inch):
