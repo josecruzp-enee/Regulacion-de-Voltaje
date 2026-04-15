@@ -131,7 +131,7 @@ def aplicar_fondo(cnv, doc, ruta_imagen):
         logo_alto  = 60    # antes 65
 
         # 🔹 Posición segura (NO invadir columnas)
-        x = 20                      # esquina izquierda
+        x = 40                      # esquina izquierda
         y = doc.pagesize[1] - logo_alto - 5   # bien arriba
 
         imagen = ImageReader(ruta_imagen)
