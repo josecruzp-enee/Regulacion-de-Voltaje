@@ -154,7 +154,7 @@ plantilla = PageTemplate(
     onPage=lambda cnv, doc: aplicar_fondo(
         cnv,
         doc,
-        os.path.join(os.path.dirname(__file__), "Membrete_SMART_EDS.png")
+        os.path.join(os.path.dirname(__file__), "Logo_romario.png")
     ),
 )
 
