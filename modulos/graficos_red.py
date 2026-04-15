@@ -446,7 +446,7 @@ def crear_grafico_nodos_df(df_conexiones, capacidad_transformador, nodo_raiz: in
     kva_por_nodo = calcular_kva_por_nodo(tabla_potencia) if tabla_potencia is not None else {}
 
     # Figura con 2 áreas: diagrama + tabla (misma imagen)
-    fig = plt.figure(figsize=(10, 6))
+    fig = plt.figure(figsize=(10, 8))
     gs = gridspec.GridSpec(2, 1, height_ratios=[2.5, 2.0], hspace=0.18)
 
     ax = fig.add_subplot(gs[0])
