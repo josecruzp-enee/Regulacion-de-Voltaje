@@ -127,7 +127,7 @@ def aplicar_fondo(cnv, doc, ruta_imagen):
         cnv.saveState()
 
         # 🔹 Logo un poco más grande (horizontal)
-        logo_ancho = 275   # antes 130
+        logo_ancho = 200   # antes 130
         logo_alto  = 60    # antes 65
 
         # 🔹 Posición segura (NO invadir columnas)
