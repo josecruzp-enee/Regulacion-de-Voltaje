@@ -21,12 +21,16 @@ CONDUCTORES = biblioteca_conductores()
 # ============================================================
 def R_X_por_km(conductores: dict, tipo_conductor: str) -> tuple[float, float]:
     """Devuelve (R_km_1c, X_km_1c) en Ω/km por conductor (1c)."""
+
+    tipo_conductor = str(tipo_conductor).strip()
+
     if tipo_conductor not in conductores:
         raise ValueError(f"Conductor '{tipo_conductor}' no está en el diccionario.")
+
     R_km = float(conductores[tipo_conductor]["R"])
     X_km = float(conductores[tipo_conductor]["X"])
-    return R_km, X_km
 
+    return R_km, X_km
 
 # ============================================================
 # Cálculo del vano (misma API que ya usas)
